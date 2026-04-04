@@ -1,0 +1,11 @@
+name: cosmicscanner_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - gcc_linux-64>=11.2.0
+  - gxx_linux-64>=11.2.0
+  - zlib
+  - openmp
+  - mkl
+  - cmake>=3.20
