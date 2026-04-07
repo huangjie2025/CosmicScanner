@@ -1,0 +1,3 @@
+[submodule "libCosmicCore"]
+	path = libCosmicCore
+	url = ../libCosmicCore
