@@ -82,22 +82,6 @@ static double wald_pvalue_1df(double z_score) {
     return std::erfc(std::abs(z_score) / std::sqrt(2.0));
 }
 
-static bool factorize_with_jitter(const Eigen::MatrixXd& matrix,
-                                  Eigen::LDLT<Eigen::MatrixXd>& solver) {
-    const double jitter_values[] = {0.0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2};
-    for (double jitter : jitter_values) {
-        Eigen::MatrixXd work = matrix;
-        if (jitter > 0.0) work.diagonal().array() += jitter;
-        solver.compute(work);
-        if (solver.info() == Eigen::Success) {
-            // Verify the solution is not degenerate
-            Eigen::VectorXd diag = solver.vectorD();
-            if (diag.cwiseAbs().minCoeff() > 1e-15) return true;
-        }
-    }
-    return false;
-}
-
 static double gamma_q(double a, double x) {
     if (x < 0.0 || a <= 0.0) return 1.0;
     if (x < a + 1.0) {
