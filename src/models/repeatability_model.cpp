@@ -3,6 +3,7 @@
 #include "stcg_vce.h"
 #include "logger.h"
 #include "matrix_io.h"
+#include "matrix_free_pcg.h"
 #include <iostream>
 #include <fstream>
 #include <cmath>
@@ -1311,7 +1312,7 @@ void RepeatabilityModel::writeNullSummary(const std::string& filename, const std
 }
 
 void RepeatabilityModel::scanSTCG() {
-    std::cout << "\nRunning Repeatability GWAS Scan (STCG matrix-free)...\n";
+    std::cout << "\nRunning Repeatability GWAS Scan (STCG PCG-based)...\n";
 
     int n_obs = n_recs_kept_;
     std::vector<int> keep_subject_indices = obs_to_sample_;
@@ -1327,31 +1328,95 @@ void RepeatabilityModel::scanSTCG() {
     std::cout << "  Records: " << n_obs << ", Subjects: " << n_subjects_keep << "\n";
     std::cout << "  V(G)=" << v_g_ << " V(PE)=" << v_pe_ << " V(E)=" << v_e_ << "\n";
 
-    // Build diagonal of V^{-1} for fast score computation
-    // V_ii = vg + vpe * n_obs_i + ve where n_obs_i is obs count for subject of record i
+    // Build PE grouping: for each subject, list of record indices
+    std::vector<std::vector<int>> subj_to_rec(n_subjects_keep);
+    for (int i = 0; i < n_obs; ++i) subj_to_rec[obs_to_subject[i]].push_back(i);
+
+    // Build V operator: V = vg*ZGZ' + vpe*ZZ' + ve*I
+    // For standardized GRM: ZGZ' has diagonal ≈ vg, off-diagonal = vg*G[i,j]
+    // ZZ' has 1 for same-subject records, 0 otherwise
+    // We use the GRM (G_subject_) for the genetic component
+    auto apply_V = [&](const Eigen::VectorXd& v, Eigen::VectorXd& out) {
+        out.setZero(n_obs);
+        // ve * v
+        out.noalias() += v_e_ * v;
+        // vpe * ZZ' * v: for each subject, scatter sum to all records
+        for (int s = 0; s < n_subjects_keep; ++s) {
+            const auto& recs = subj_to_rec[s];
+            double sum_v = 0.0;
+            for (int r : recs) sum_v += v[r];
+            for (int r : recs) out[r] += v_pe_ * sum_v;
+        }
+        // vg * ZGZ' * v: genetic component using GRM
+        // First gather v from records to subjects (mean per subject)
+        // Then apply G, then scatter back
+        if (G_subject_.size() > 0) {
+            // Gather: v_subj[s] = sum of v over records for subject s
+            Eigen::VectorXd v_subj = Eigen::VectorXd::Zero(n_subjects_keep);
+            for (int s = 0; s < n_subjects_keep; ++s) {
+                for (int r : subj_to_rec[s]) v_subj[s] += v[r];
+            }
+            // Apply G: Gv = G * v_subj
+            Eigen::VectorXd Gv = G_subject_ * v_subj;
+            // Scatter back: for each record of subject s, add vg * Gv[s]
+            for (int s = 0; s < n_subjects_keep; ++s) {
+                for (int r : subj_to_rec[s]) out[r] += v_g_ * Gv[s];
+            }
+        } else {
+            // No GRM available: use diagonal approximation (G_ii ≈ 1)
+            for (int s = 0; s < n_subjects_keep; ++s) {
+                for (int r : subj_to_rec[s]) out[r] += v_g_ * v[r];
+            }
+        }
+    };
+
+    // Build Jacobi preconditioner: V_diag^{-1}
+    // V_ii = vg + vpe * n_obs_i + ve
     std::vector<int> n_obs_per_subj(n_subjects_keep, 0);
     for (int i = 0; i < n_obs; ++i) n_obs_per_subj[obs_to_subject[i]]++;
 
-    Eigen::VectorXd V_inv_diag(n_obs);
+    Eigen::VectorXd V_diag_inv(n_obs);
     for (int i = 0; i < n_obs; ++i) {
         double V_ii = v_g_ + v_pe_ * n_obs_per_subj[obs_to_subject[i]] + v_e_;
-        V_inv_diag[i] = 1.0 / std::max(V_ii, 1e-10);
+        V_diag_inv[i] = 1.0 / std::max(V_ii, 1e-10);
     }
 
-    // Compute residuals: r = y - X*beta (using null model)
-    Eigen::VectorXd resid = y_obs_;
-    if (X_obs_.cols() > 0) {
-        Eigen::MatrixXd XtX = X_obs_.cast<double>().transpose() * X_obs_.cast<double>();
-        Eigen::VectorXd Xty = X_obs_.cast<double>().transpose() * resid;
-        Eigen::LDLT<Eigen::MatrixXd> x_solver(XtX);
-        if (x_solver.info() == Eigen::Success) {
-            Eigen::VectorXd beta = x_solver.solve(Xty);
-            resid -= X_obs_.cast<double>() * beta;
-        }
+    auto apply_precond = [&](const Eigen::VectorXd& r, Eigen::VectorXd& z) {
+        z = r.cwiseProduct(V_diag_inv);
+    };
+
+    // Compute null model: V^{-1} * y and V^{-1} * X using PCG
+    MatrixFreePCG pcg(n_obs);
+    pcg.setMultOp(apply_V);
+    pcg.setPrecondOp(apply_precond);
+    pcg.setQuiet(true);
+
+    // Compute V^{-1} * y
+    Eigen::VectorXd Vinv_y = pcg.solve(y_obs_, 1e-8, 500);
+
+    // Compute V^{-1} * X columns for projection
+    Eigen::MatrixXd Vinv_X(n_obs, X_obs_.cols());
+    for (int j = 0; j < X_obs_.cols(); ++j) {
+        Eigen::VectorXd X_col = X_obs_.col(j).cast<double>();
+        Vinv_X.col(j) = pcg.solve(X_col, 1e-8, 500);
     }
 
-    // P * y ≈ V^{-1} * r (projection residual, diagonal approximation)
-    Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    // Compute beta = (X'V^{-1}X)^{-1} X'V^{-1}y
+    Eigen::MatrixXd XtVinvX = X_obs_.cast<double>().transpose() * Vinv_X;
+    Eigen::LDLT<Eigen::MatrixXd> x_solver(XtVinvX);
+    Eigen::VectorXd beta;
+    if (x_solver.info() == Eigen::Success) {
+        Eigen::VectorXd Xty = X_obs_.cast<double>().transpose() * Vinv_y;
+        beta = x_solver.solve(Xty);
+    } else {
+        beta = Eigen::VectorXd::Zero(X_obs_.cols());
+    }
+
+    // Compute P * y = V^{-1} * (y - X*beta)
+    Eigen::VectorXd resid = y_obs_ - X_obs_.cast<double>() * beta;
+    Eigen::VectorXd P_y = pcg.solve(resid, 1e-8, 500);
+
+    std::cout << "  Null model PCG completed. Beta[0]=" << (beta.size() > 0 ? beta[0] : 0.0) << "\n";
 
     // Open output file
     std::string out_file = options_.out_prefix + ".stcg.assoc.txt";
@@ -1362,7 +1427,7 @@ void RepeatabilityModel::scanSTCG() {
     auto process_snp = [&](const std::string& chrom, const std::string& rsid, uint32_t pos,
                            const std::string& ref, const std::string& alt,
                            const Eigen::VectorXf& dosage) {
-        // Build subject-level genotype then expand to record-level
+        // Build record-level genotype
         Eigen::VectorXd g(n_obs);
         double sum_g = 0.0;
         int valid_n = 0;
@@ -1384,11 +1449,13 @@ void RepeatabilityModel::scanSTCG() {
         // Score = g' * P * y
         double score = g.dot(P_y);
 
-        // Score variance ≈ g' * V_inv * g (diagonal approximation)
-        double score_var = 0.0;
-        for (int i = 0; i < n_obs; ++i) {
-            score_var += g[i] * g[i] * V_inv_diag[i];
-        }
+        // Score variance = g' * P * g via PCG
+        // P * g = V^{-1} * (g - X * (X'V^{-1}X)^{-1} X'V^{-1}g)
+        Eigen::VectorXd Vinv_g = pcg.solve(g, 1e-8, 200);
+        Eigen::VectorXd XtVinvX_XtVinv_g = x_solver.solve(X_obs_.cast<double>().transpose() * Vinv_g);
+        Eigen::VectorXd P_g = Vinv_g - Vinv_X * XtVinvX_XtVinv_g;
+        double score_var = g.dot(P_g);
+
         if (score_var < 1e-15) return;
 
         double z = score / std::sqrt(score_var);
