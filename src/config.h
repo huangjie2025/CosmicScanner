@@ -36,12 +36,22 @@ struct GwasConfig {
     bool force_slow = false;
     bool no_loco = false;
     bool use_covariate_projection = true;
+    bool repeatability_mixed_precision = false;
+    bool repeatability_refit_validation = false;
+    int repeatability_refit_limit = 0;
     int grm_alg = 1;
     double min_maf = 0.01;
     double min_hwe = 0.0;
     double sparse_cutoff = 0.05;
     std::string snp_weight_file;
     std::string pop_class_file;
+    std::string repeatability_grm_cache_prefix;
+    std::string repeatability_mode = "auto";  // auto, exact, fast, stcg
     bool out_ssf = false;
+    int reml_maxit = 50;
+    double reml_tol = 1e-6;
+    double reml_vg = -1.0;
+    double reml_vpe = -1.0;
+    double reml_ve = -1.0;
 };
 }

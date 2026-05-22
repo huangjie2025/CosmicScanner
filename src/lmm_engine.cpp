@@ -504,12 +504,7 @@ void LmmEngine::prepareFromVce(const EigenVce& vce) {
     D = vce.getEigenvalues();
     W_proj = vce.getProjectedW();
     Uty = vce.getUty();
-    
-    // In covariate projection mode, UtX might be empty, which is expected
-    // If not using projection, UtX needs to be passed or derived
-    // For now, we assume use_covariate_projection = true is the default
-    // We can add a method to get UtX from EigenVce if needed, but in projection mode it's empty
-    UtX = Eigen::MatrixXd::Zero(D.size(), 0); 
+    UtX = vce.getUtX();
 }
 
 void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
@@ -554,9 +549,10 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
     spa_opts.pval_threshold = 0.05;
     SPATest spa(spa_opts);
     if (options.use_spa) {
-        Eigen::VectorXd dummy_mu = Eigen::VectorXd::Constant(n, 0.5);
-        Eigen::VectorXd dummy_var = Eigen::VectorXd::Constant(n, 0.25);
-        spa.set_null_model(dummy_mu, dummy_var);
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
     }
     
     const auto& bim = reader.getBimInfo();
@@ -654,14 +650,16 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
     size_t m = reader.getNumVariants();
     results.resize(m);
     
+    int n_eig = D.size();
+    
     // Prepare V inverse diagonal
-    Eigen::VectorXd V_inv_diag(n);
-    for(int i=0; i<n; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
+    Eigen::VectorXd V_inv_diag(n_eig);
+    for(int i=0; i<n_eig; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
     
     // Fixed Effects Part
     Eigen::MatrixXd Xt_Vinv_X(UtX.cols(), UtX.cols());
     Xt_Vinv_X.setZero();
-    for(int i=0; i<n; ++i) Xt_Vinv_X += V_inv_diag[i] * (UtX.row(i).transpose() * UtX.row(i));
+    for(int i=0; i<n_eig; ++i) Xt_Vinv_X += V_inv_diag[i] * (UtX.row(i).transpose() * UtX.row(i));
     Eigen::MatrixXd Xt_Vinv_X_inv;
     Eigen::LLT<Eigen::MatrixXd> lltX959(Xt_Vinv_X);
     if(lltX959.info() == Eigen::Success) {
@@ -671,7 +669,7 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
     }
     
     Eigen::VectorXd Xt_Vinv_y = Eigen::VectorXd::Zero(UtX.cols());
-    for(int i=0; i<n; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
+    for(int i=0; i<n_eig; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
     
     Eigen::VectorXd beta_null(UtX.cols());
     if (UtX.cols() > 0) {
@@ -689,9 +687,10 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
     spa_opts.pval_threshold = 0.05;
     SPATest spa(spa_opts);
     if (options.use_spa) {
-        Eigen::VectorXd dummy_mu = Eigen::VectorXd::Constant(n, 0.5);
-        Eigen::VectorXd dummy_var = Eigen::VectorXd::Constant(n, 0.25);
-        spa.set_null_model(dummy_mu, dummy_var);
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
     }
     
     std::string chrom, rsid, ref, alt;
@@ -752,11 +751,12 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
             var_score = g_Vinv_g;
         } else {
             Eigen::VectorXd Xt_Vinv_g = Eigen::VectorXd::Zero(UtX.cols());
-            for(int i=0; i<n; ++i) Xt_Vinv_g += V_inv_diag[i] * (UtX.row(i).transpose() * Utg[i]);
+            int n_eig = D.size();
+            for(int i=0; i<n_eig; ++i) Xt_Vinv_g += V_inv_diag[i] * (UtX.row(i).transpose() * Utg[i]);
             double term2 = Xt_Vinv_g.transpose() * Xt_Vinv_X_inv * Xt_Vinv_g;
             var_score = g_Vinv_g - term2;
         }
-        
+
         double se = std::sqrt(var_score);
         double beta_snp = (var_score > 1e-9) ? (score / var_score) : 0.0;
         double beta_se = (var_score > 1e-9) ? (1.0 / se) : NAN;
@@ -788,12 +788,14 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     size_t m = reader.getNumVariants();
     results.resize(m);
     
-    Eigen::VectorXd V_inv_diag(n);
-    for(int i=0; i<n; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
+    int n_eig = D.size();
+    
+    Eigen::VectorXd V_inv_diag(n_eig);
+    for(int i=0; i<n_eig; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
     
     Eigen::MatrixXd Xt_Vinv_X(UtX.cols(), UtX.cols());
     Xt_Vinv_X.setZero();
-    for(int i=0; i<n; ++i) Xt_Vinv_X += V_inv_diag[i] * (UtX.row(i).transpose() * UtX.row(i));
+    for(int i=0; i<n_eig; ++i) Xt_Vinv_X += V_inv_diag[i] * (UtX.row(i).transpose() * UtX.row(i));
     Eigen::MatrixXd Xt_Vinv_X_inv;
     Eigen::LLT<Eigen::MatrixXd> lltX1058(Xt_Vinv_X);
     if(lltX1058.info() == Eigen::Success) {
@@ -803,7 +805,7 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     }
     
     Eigen::VectorXd Xt_Vinv_y = Eigen::VectorXd::Zero(UtX.cols());
-    for(int i=0; i<n; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
+    for(int i=0; i<n_eig; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
     
     Eigen::VectorXd beta_null(UtX.cols());
     if (UtX.cols() > 0) {
@@ -821,9 +823,10 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     spa_opts.pval_threshold = 0.05;
     SPATest spa(spa_opts);
     if (options.use_spa) {
-        Eigen::VectorXd dummy_mu = Eigen::VectorXd::Constant(n, 0.5);
-        Eigen::VectorXd dummy_var = Eigen::VectorXd::Constant(n, 0.25);
-        spa.set_null_model(dummy_mu, dummy_var);
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
     }
     
     reader.reset();
@@ -881,7 +884,7 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
             var_score = g_Vinv_g;
         } else {
             Eigen::VectorXd Xt_Vinv_g = Eigen::VectorXd::Zero(UtX.cols());
-            for(int i=0; i<n; ++i) Xt_Vinv_g += V_inv_diag[i] * (UtX.row(i).transpose() * Utg[i]);
+            for(int i=0; i<n_eig; ++i) Xt_Vinv_g += V_inv_diag[i] * (UtX.row(i).transpose() * Utg[i]);
             double term2 = Xt_Vinv_g.transpose() * Xt_Vinv_X_inv * Xt_Vinv_g;
             var_score = g_Vinv_g - term2;
         }

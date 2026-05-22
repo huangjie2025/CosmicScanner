@@ -25,13 +25,19 @@ void print_usage(const char* prog_name) {
     cout << "  --mpheno <n>        Phenotype column number (default: 1)\n";
     cout << "  --mpheno-list <list> Comma-separated list of phenotype columns (e.g. 1,2,3)\n";
     cout << "  --multivariate      Run Multivariate LMM (requires --mpheno-list)\n";
+    cout << "  --repeatability-model Run Repeatability GWAS on long-format phenotypes\n";
     cout << "  --covar <file>      Categorical Covariate file (FID IID Cat1 ...)\n";
     cout << "  --qcovar <file>     Quantitative Covariate file (FID IID Val1 ...)\n";
     cout << "Analysis Options:\n";
     cout << "  --make-grm          Calculate GRM and exit (PLINK only)\n";
-    cout << "  --make-grm-alg <n>  GRM Algorithm (0: Yang et al, 1: VanRaden). Default: 1\n";
+    cout << "  --make-grm-alg <n>  GRM Algorithm (1: VanRaden, 3: Yang, 5: TrueVar/Yang2010). Default: 1\n";
     cout << "  --gwas              Run GWAS scan\n";
     cout << "  --fast-lmm          Use approximate LMM (fixed delta from null model)\n";
+    cout << "  --repeatability-mixed-precision Use Float32 kernels for repeatability exact scan\n";
+    cout << "  --repeatability-grm-cache <prefix> Save/load repeatability subject GRM cache\n";
+    cout << "  --repeatability-refit-validation Run per-SNP variance-component refit validation for repeatability GWAS (small datasets)\n";
+    cout << "  --repeatability-refit-limit <n> Limit per-SNP refit validation to first n SNPs (0: all)\n";
+    cout << "  --repeatability-mode <mode> Repeatability strategy: auto, exact, fast, stcg (default: auto)\n";
     cout << "  --spa               Use Saddle Point Approximation (for binary traits)\n";
     cout << "  --skat              Run SKAT (Sequence Kernel Association Test) for rare variants\n";
     cout << "  --burden            Run Burden Test for rare variants\n";
@@ -42,6 +48,12 @@ void print_usage(const char* prog_name) {
     cout << "  --pop-class <file>  Population classification file for mixed GRM\n";
     cout << "  --maf <float>       Minimum Allele Frequency filter (default: 0.01)\n";
     cout << "  --hwe <float>       Minimum HWE p-value filter (default: 0.0, disabled)\n";
+    cout << "VCE Options:\n";
+    cout << "  --reml-maxit <n>    Maximum VCE iterations (default: 50)\n";
+    cout << "  --reml-tol <float>  VCE convergence tolerance (default: 1e-6)\n";
+    cout << "  --reml-vg <float>   Genetic variance (skip VCE, use this value)\n";
+    cout << "  --reml-vpe <float>  Permanent environment variance (skip VCE)\n";
+    cout << "  --reml-ve <float>   Residual variance (skip VCE)\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -84,6 +96,11 @@ int main(int argc, char* argv[]) {
         else if (arg == "--sparse-cutoff" && i + 1 < argc) { cfg.sparse_cutoff = stod(argv[++i]); }
         else if (arg == "--gwas") { cfg.run_gwas = true; }
         else if (arg == "--fast-lmm") { cfg.fast_lmm = true; }
+        else if (arg == "--repeatability-mixed-precision") { cfg.repeatability_mixed_precision = true; }
+        else if (arg == "--repeatability-grm-cache" && i + 1 < argc) { cfg.repeatability_grm_cache_prefix = argv[++i]; }
+        else if (arg == "--repeatability-refit-validation") { cfg.repeatability_refit_validation = true; }
+        else if (arg == "--repeatability-refit-limit" && i + 1 < argc) { cfg.repeatability_refit_limit = stoi(argv[++i]); }
+        else if (arg == "--repeatability-mode" && i + 1 < argc) { cfg.repeatability_mode = argv[++i]; }
         else if (arg == "--spa") { cfg.use_spa = true; }
         else if (arg == "--skat") { cfg.run_skat = true; }
         else if (arg == "--burden") { cfg.run_burden = true; }
@@ -97,6 +114,11 @@ int main(int argc, char* argv[]) {
         else if (arg == "--hwe" && i + 1 < argc) { cfg.min_hwe = stod(argv[++i]); }
         else if (arg == "--snp-weight" && i + 1 < argc) { cfg.snp_weight_file = argv[++i]; }
         else if (arg == "--pop-class" && i + 1 < argc) { cfg.pop_class_file = argv[++i]; }
+        else if (arg == "--reml-maxit" && i + 1 < argc) { cfg.reml_maxit = stoi(argv[++i]); }
+        else if (arg == "--reml-tol" && i + 1 < argc) { cfg.reml_tol = stod(argv[++i]); }
+        else if (arg == "--reml-vg" && i + 1 < argc) { cfg.reml_vg = stod(argv[++i]); }
+        else if (arg == "--reml-vpe" && i + 1 < argc) { cfg.reml_vpe = stod(argv[++i]); }
+        else if (arg == "--reml-ve" && i + 1 < argc) { cfg.reml_ve = stod(argv[++i]); }
         else if (arg == "--help" || arg == "-h") { print_usage(argv[0]); return 0; }
     }
 
