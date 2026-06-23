@@ -39,6 +39,17 @@ void print_usage(const char* prog_name) {
     cout << "  --repeatability-refit-limit <n> Limit per-SNP refit validation to first n SNPs (0: all)\n";
     cout << "  --repeatability-mode <mode> Repeatability strategy: auto, exact, fast, stcg (default: auto)\n";
     cout << "  --spa               Use Saddle Point Approximation (for binary traits)\n";
+    cout << "  --threshold-model   Binary trait PSR-GWAS (PQL + probit/logit + weighted LMM)\n";
+    cout << "  --link <type>       Threshold link: probit or logit (default: probit)\n";
+    cout << "  --count-model       Count/binomial PSR-GWAS (PQL + weighted LMM)\n";
+    cout << "  --family <type>     Count family: poisson, negbin, or binomial (default: poisson)\n";
+    cout << "  --offset <file>     One numeric log-offset/exposure value per sample\n";
+    cout << "  --binomial-pheno <file> Binomial FID IID EVENT TRIAL file\n";
+    cout << "  --psr-maxit <n>     Max PSR/PQL iterations (default: 50)\n";
+    cout << "  --psr-tol <float>   PSR/PQL convergence tolerance (default: 1e-6)\n";
+    cout << "  --psr-mu-eps <float> Mu clipping epsilon for PSR (default: 1e-6)\n";
+    cout << "  --psr-min-weight <float> Minimum PSR working weight (default: 1e-8)\n";
+    cout << "  --psr-max-weight <float> Maximum PSR working weight (default: 1e8)\n";
     cout << "  --skat              Run SKAT (Sequence Kernel Association Test) for rare variants\n";
     cout << "  --burden            Run Burden Test for rare variants\n";
     cout << "  --set-file <file>   Define variant sets (e.g., genes) for rare variant tests\n";
@@ -88,6 +99,17 @@ int main(int argc, char* argv[]) {
         }
         else if (arg == "--multivariate") { cfg.multivariate = true; }
         else if (arg == "--repeatability-model") { cfg.repeatability_model = true; }
+        else if (arg == "--threshold-model") { cfg.threshold_model = true; }
+        else if (arg == "--link" && i + 1 < argc) { cfg.link_type = argv[++i]; }
+        else if (arg == "--count-model") { cfg.count_model = true; }
+        else if (arg == "--family" && i + 1 < argc) { cfg.family_type = argv[++i]; }
+        else if (arg == "--offset" && i + 1 < argc) { cfg.offset_file = argv[++i]; }
+        else if (arg == "--binomial-pheno" && i + 1 < argc) { cfg.binomial_file = argv[++i]; }
+        else if (arg == "--psr-maxit" && i + 1 < argc) { cfg.psr_maxit = stoi(argv[++i]); }
+        else if (arg == "--psr-tol" && i + 1 < argc) { cfg.psr_tol = stod(argv[++i]); }
+        else if (arg == "--psr-mu-eps" && i + 1 < argc) { cfg.psr_mu_eps = stod(argv[++i]); }
+        else if (arg == "--psr-min-weight" && i + 1 < argc) { cfg.psr_min_weight = stod(argv[++i]); }
+        else if (arg == "--psr-max-weight" && i + 1 < argc) { cfg.psr_max_weight = stod(argv[++i]); }
         else if (arg == "--covar" && i + 1 < argc) { cfg.covar_file = argv[++i]; }
         else if (arg == "--qcovar" && i + 1 < argc) { cfg.qcovar_file = argv[++i]; }
         else if (arg == "--make-grm") { cfg.make_grm = true; }

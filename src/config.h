@@ -22,6 +22,8 @@ struct GwasConfig {
     std::vector<int> mpheno_list;
     bool multivariate = false;
     bool repeatability_model = false;
+    bool threshold_model = false;
+    bool count_model = false;
     bool rrm_model = false;
     bool make_grm = false;
     bool make_grm_sparse = false;
@@ -53,5 +55,14 @@ struct GwasConfig {
     double reml_vg = -1.0;
     double reml_vpe = -1.0;
     double reml_ve = -1.0;
+    std::string link_type = "probit";
+    std::string family_type = "poisson";
+    std::string offset_file;
+    std::string binomial_file;
+    int psr_maxit = 50;
+    double psr_tol = 1e-6;
+    double psr_mu_eps = 1e-6;
+    double psr_min_weight = 1e-8;
+    double psr_max_weight = 1e8;
 };
 }
