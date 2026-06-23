@@ -1,0 +1,6 @@
+trait_type	psr_glmm_r_claimed_support	cosmicscanner_status	entrypoint	validation_status	benchmark_status	notes
+normal	yes	implemented_special_case	standard LMM GWAS via --gwas --no-loco	v0.4 normal special-case validation	included in v0.4 benchmark	Normal traits are the identity-link Gaussian special case and reuse existing LMM GWAS, not a separate PSR iteration.
+binary	yes	implemented_v0.3_stable	--threshold-model --link probit|logit	v0.3 stable CI	included in v0.4 benchmark	PSR/PQL binary pseudo-response plus weighted LMM scan; candidate refinement available via optional R hooks.
+binomial	yes	implemented_v0.3_stable	--count-model --family binomial --binomial-pheno	v0.3 stable CI	included in v0.4 benchmark	Event/trial binomial PSR/PQL with bounded mu and working weights.
+poisson	yes	implemented_v0.3_stable	--count-model --family poisson	v0.3 stable CI	included in v0.4 benchmark	Poisson PSR/PQL with optional offset and weighted LMM scan.
+ordinal	yes	experimental_v0.4_mvp	--ordinal-model --ordinal-pheno	v0.4 ordinal smoke validation	included in v0.4 benchmark	Implemented as experimental cumulative-binary approximation; not yet full stacked proportional-odds PSR-GLMM parity.
