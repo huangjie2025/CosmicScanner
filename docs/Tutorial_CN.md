@@ -253,6 +253,54 @@ Hybrid 输出 `*.assoc.mv.txt`、`*.refine.snplist`、`*.refined.assoc.mv.txt` �
 
 PSR-GWAS 面向非正态性状的快速全基因组扫描。当前实现采用 PSR/PQL 线性化，生成 pseudo response 和 working residual variance，并通过 weighted LMM 扫描 SNP。它不是 exact GLMM；显著位点建议再用 candidate refinement 或外部 exact GLMM/GMMAT/POLMM 做复核。
 
+有序分类性状（至少 3 个有序类别）支持 cumulative-binary baseline 和 v0.5 stacked proportional-odds PSR。正式 v0.5 分析推荐 dense-zkz + grid-reml：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --gwas \
+  --ordinal-model \
+  --ordinal-pheno data/ordinal.pheno \
+  --ordinal-mode stacked-psr \
+  --ordinal-stacked-engine dense-zkz \
+  --ordinal-vc-method grid-reml \
+  --out results/psr_ordinal
+```
+
+ordinal 模式开关：
+
+- `--ordinal-mode experimental-cumulative-binary`（默认）：对 C-1 个阈值分别运行 binary PSR 扫描，取每个 SNP 的最优 p 值。
+- `--ordinal-mode stacked-psr`：Stacked proportional-odds PSR first pass。使用 `--ordinal-stacked-engine fixed-gls|dense-zkz` 选择引擎：
+  - `fixed-gls`（默认）：Stage 1，V=I，无随机效应。
+  - `dense-zkz`（实验性）：Stage 2A/2B，V = sigma2_g * K_stack + diag(1/w)，全 Wald 扫描，输出个体 BLUP。要求 N_stack <= 2000。
+
+Stage 2B 新增方差组分估计。使用 `--ordinal-vc-method fixed|grid-reml`：
+- `fixed`（默认）：sigma2_g 固定为 `--ordinal-sigma2-g` 的值（默认 0.5）。
+- `grid-reml`：在每个 PSR 迭代内通过网格/profile REML 估计 sigma2_g。仅支持 `--ordinal-stacked-engine dense-zkz`。
+
+网格搜索参数：`--ordinal-vc-grid-min <double>`（默认 0.0）、`--ordinal-vc-grid-max <double>`（默认 2.0）、`--ordinal-vc-grid-points <int>`（默认 41）。
+
+使用 `grid-reml` 时，会新增输出文件 `.ordinal.vc.tsv`（记录每轮迭代的 VC 日志），`.gwas.tsv` 会增加 `vc_method`、`vc_update`、`sigma2_g` 字段。默认 `.gwas.tsv` 使用修正后的 Wald / pseudo-score p 值，是 v0.5 推荐主结果。
+
+Score 诊断可用 `--ordinal-test wald|score|robust-score|all`：
+- `wald`（默认）：`.gwas.tsv` 输出 Wald 主结果。
+- `score`：`.gwas.tsv` 输出 pseudo-score（与 Wald 代数等价）。
+- `robust-score`：`.gwas.tsv` 输出 cluster-robust sensitivity 统计量。
+- `all`：`.gwas.tsv` 保持 Wald，同时写出 `.ordinal.score.tsv`，包含 Wald、pseudo-score、raw-score 和 cluster-score 诊断。
+
+```bash
+# Stage 2B grid-reml
+./cosmicscanner --bfile data/geno --gwas \
+  --ordinal-model --ordinal-pheno data/ordinal.pheno \
+  --ordinal-mode stacked-psr \
+  --ordinal-stacked-engine dense-zkz \
+  --ordinal-vc-method grid-reml
+```
+
+详见 `docs/PSR_GWAS_V0.5_STACKED_ORDINAL_SUMMARY.md`、`docs/PSR_GWAS_V0.5_STAGE2A_DENSE_ZKZ_SUMMARY.md`、`docs/PSR_GWAS_V0.5_STAGE2B_VC_UPDATE_SUMMARY.md` 和 `docs/PSR_GWAS_V0.5_SCORE_TEST_DIAGNOSTIC_PLAN.md`。使用 `--ordinal-allow-fallback` 允许 stacked 失败时回退到 cumulative-binary。
+
+完整 stacked proportional-odds PSR 设计见 `docs/PSR_GWAS_FULL_ORDINAL_DESIGN.md`。
+
 二元性状可以使用 probit/logit threshold 模型：
 
 ```bash
@@ -374,6 +422,16 @@ bash tests/run_gwas_core_regression.sh --fast --with-psr
 | | `--family poisson\|binomial\|negbin` | count 模型分布；`negbin` 仍为实验入口 |
 | | `--offset <file>` | Poisson log-offset/exposure，每个样本一行 |
 | | `--binomial-pheno <file>` | Binomial event/trial 表型文件，格式 `FID IID EVENT TRIAL` |
+| | `--ordinal-model` | 开启实验性有序分类 PSR-GWAS |
+| | `--ordinal-pheno <file>` | 有序分类表型文件，格式 `FID IID ORDINAL_LEVEL` |
+| | `--ordinal-mode <name>` | 有序分类算法：`experimental-cumulative-binary`（默认）或 `stacked-psr` |
+| | `--ordinal-stacked-engine <name>` | stacked-psr 引擎：`fixed-gls`（默认，Stage 1 V=I）或 `dense-zkz`（Stage 2A/2B，V=ZKZ' + BLUP） |
+| | `--ordinal-vc-method <name>` | VC 估计方法：`fixed`（默认，sigma2_g 固定）或 `grid-reml`（网格/profile REML） |
+| | `--ordinal-sigma2-g <f>` | 初始/固定 sigma2_g 值（默认 0.5） |
+| | `--ordinal-vc-grid-min <f>` | 网格搜索下界（默认 0.0） |
+| | `--ordinal-vc-grid-max <f>` | 网格搜索上界（默认 2.0） |
+| | `--ordinal-vc-grid-points <n>` | 网格搜索点数（默认 41） |
+| | `--ordinal-allow-fallback` | 允许从 stacked-psr 回退到 experimental cumulative-binary |
 | | `--psr-maxit <n>` | PSR/PQL 最大迭代次数，默认 50 |
 | | `--psr-tol <f>` | PSR/PQL 收敛阈值，默认 1e-6 |
 | | `--psr-mu-eps <f>` | PSR mean clipping epsilon，默认 1e-6 |
@@ -390,7 +448,7 @@ bash tests/run_gwas_core_regression.sh --fast --with-psr
 | | `--make-grm-alg 6` | EMmvGWAS-compatible GRM：`Z=dosage-1` 且按 `mean(diag(Z Z'))` 归一化，仅建议用于兼容验证 |
 | | `--repeatability-mixed-precision`| 重复力模型中使用 Float32 降低内存占用 |
 | | `--repeatability-grm-cache <pre>`| 开启 mmap 磁盘缓存复用机制 |
-# PSR-GWAS v0.4 对标说明
+# PSR-GWAS v0.4.1 验证说明
 
 CosmicScanner PSR-GWAS 是 PSR/PQL 近似方法，不是 exact GLMM 推断。
 
@@ -398,12 +456,16 @@ CosmicScanner PSR-GWAS 是 PSR/PQL 近似方法，不是 exact GLMM 推断。
 - binary 性状：`--threshold-model --link probit|logit`。
 - Poisson 性状：`--count-model --family poisson`。
 - binomial event/trial 性状：`--count-model --family binomial --binomial-pheno FID_IID_EVENT_TRIAL.txt`。
-- ordinal 性状：`--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`；当前 v0.4 是 `experimental_cumulative_binary`，不是 full stacked proportional-odds PSR-GLMM parity。
+- ordinal 性状：`--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`。
+  - 默认：`experimental_cumulative_binary`（cumulative-binary 近似）。
+  - Stacked PSR：`--ordinal-mode stacked-psr` + `--ordinal-stacked-engine fixed-gls|dense-zkz`。详见 `docs/PSR_GWAS_V0.5_STACKED_ORDINAL_SUMMARY.md`（Stage 1）和 `docs/PSR_GWAS_V0.5_STAGE2A_DENSE_ZKZ_SUMMARY.md`（Stage 2A）。完整设计：`docs/PSR_GWAS_FULL_ORDINAL_DESIGN.md`。
 
-完整 v0.4 验证：
+完整 v0.4.1 验证：
 
 ```bash
 bash tests/run_psr_full_parity_validation.sh
 ```
+
+输出包括 formal simulation 报告（`tests/results/psr_formal_simulation/psr_formal_simulation_report.md`）、accuracy/speed 报告（`tests/results/psr_gwas_smoke/psr_accuracy_speed_report.md`）、ordinal design check（`tests/results/psr_ordinal_full_design/full_ordinal_design_check.tsv`）。
 
 官方 PSR-GLMM/R 只做 availability tracking，不作为 CI 阻塞依赖。替代 benchmark 使用 R GLM baseline，并在安装时记录 optional Firth、glmer、glmmTMB、ordinal 工具结果。

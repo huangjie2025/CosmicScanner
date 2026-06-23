@@ -130,12 +130,12 @@ def simulate_data(rng, n, m, trait_type, effect):
     return G, causal, {"events": rng.binomial(trials, logistic(eta - 0.2)), "trials": trials}
 
 
-def run_cosmic(prefix, trait_type, payload, out_prefix):
+def run_cosmic(prefix, trait_type, payload, out_prefix, link="probit"):
     cmd = [str(BIN), "--bfile", str(prefix), "--gwas", "--no-loco", "--maf", "0.0", "--psr-maxit", "25", "--out", str(out_prefix)]
     if trait_type == "binary":
         pheno = add_ext(prefix, ".pheno")
         write_one_col_pheno(pheno, payload["pheno"])
-        cmd += ["--pheno", str(pheno), "--mpheno", "1", "--threshold-model", "--link", "probit"]
+        cmd += ["--pheno", str(pheno), "--mpheno", "1", "--threshold-model", "--link", link]
     elif trait_type == "poisson":
         pheno = add_ext(prefix, ".pheno")
         write_one_col_pheno(pheno, payload["pheno"])

@@ -152,4 +152,133 @@ else
   printf 'trait_type\tmethod\tmethod_available\terror_message\nordinal\tMASS::polr\tFALSE\tRscript not found\n' > "${RESULT_DIR}/ordinal_r_baseline_availability.tsv"
 fi
 
+# ========== stacked-psr fixed-gls validation ==========
+echo ""
+echo "================================================"
+echo "Stacked-psr fixed-gls validation (N=90 M=150 levels=4)"
+echo "================================================"
+"${BIN}" --bfile "${PREFIX}" --gwas --no-loco --maf 0.0 \
+  --ordinal-model --ordinal-pheno "${PREFIX}.ordinal.pheno" --link logit \
+  --ordinal-mode stacked-psr --psr-maxit 25 \
+  --out "${OUT}.stacked_fixed"
+
+python3 - "${OUT}.stacked_fixed" <<'PY'
+import csv, sys, math
+from pathlib import Path
+prefix = Path(sys.argv[1])
+gwas = Path(str(prefix) + ".gwas.tsv")
+conv = Path(str(prefix) + ".psr.convergence.tsv")
+thr = Path(str(prefix) + ".ordinal.thresholds.tsv")
+for path in (gwas, conv, thr):
+    if not path.exists() or path.stat().st_size == 0:
+        raise SystemExit(f"Missing stacked fixed output: {path}")
+with gwas.open(newline="") as f:
+    rows = list(csv.DictReader(f, delimiter="\t"))
+n = len(rows)
+if n == 0:
+    raise SystemExit("stacked fixed: no GWAS rows")
+for col in ["effect", "se", "wald_or_stat", "p_value", "log10p"]:
+    for row in rows:
+        v = float(row[col])
+        if not math.isfinite(v):
+            raise SystemExit(f"stacked fixed: non-finite {col}: {v}")
+impl = rows[0].get("ordinal_implementation", "")
+if impl != "fixed_vc_weighted_gls_first_pass":
+    raise SystemExit(f"stacked fixed: expected fixed_vc_weighted_gls_first_pass, got {impl}")
+print(f"stacked fixed: {n} SNPs all finite, ordinal_implementation={impl}")
+PY
+echo "[PASS] stacked-psr fixed-gls validation"
+
+# ========== stacked-psr dense-zkz validation ==========
+echo ""
+echo "================================================"
+echo "Stacked-psr dense-zkz validation (N=90 M=150 levels=4)"
+echo "================================================"
+"${BIN}" --bfile "${PREFIX}" --gwas --no-loco --maf 0.0 \
+  --ordinal-model --ordinal-pheno "${PREFIX}.ordinal.pheno" --link logit \
+  --ordinal-mode stacked-psr --ordinal-stacked-engine dense-zkz \
+  --psr-maxit 25 \
+  --out "${OUT}.stacked_densezkz"
+
+python3 - "${OUT}.stacked_densezkz" <<'PY'
+import csv, sys, math
+from pathlib import Path
+prefix = Path(sys.argv[1])
+gwas = Path(str(prefix) + ".gwas.tsv")
+conv = Path(str(prefix) + ".psr.convergence.tsv")
+thr = Path(str(prefix) + ".ordinal.thresholds.tsv")
+blup = Path(str(prefix) + ".ordinal.blup.tsv")
+for path in (gwas, conv, thr, blup):
+    if not path.exists() or path.stat().st_size == 0:
+        raise SystemExit(f"Missing stacked dense-zkz output: {path}")
+with gwas.open(newline="") as f:
+    rows = list(csv.DictReader(f, delimiter="\t"))
+n = len(rows)
+if n == 0:
+    raise SystemExit("stacked dense-zkz: no GWAS rows")
+for col in ["effect", "se", "wald_or_stat", "p_value", "log10p"]:
+    for row in rows:
+        v = float(row[col])
+        if not math.isfinite(v):
+            raise SystemExit(f"stacked dense-zkz: non-finite {col}: {v}")
+impl = rows[0].get("ordinal_implementation", "")
+if impl != "dense_zkz_blup_first_pass":
+    raise SystemExit(f"stacked dense-zkz: expected dense_zkz_blup_first_pass, got {impl}")
+print(f"stacked dense-zkz: {n} SNPs all finite, ordinal_implementation={impl}")
+# BLUP check
+with blup.open(newline="") as f:
+    b_rows = list(csv.DictReader(f, delimiter="\t"))
+for br in b_rows:
+    bv = float(br.get("blup", "nan"))
+    if not math.isfinite(bv):
+        raise SystemExit(f"stacked dense-zkz: non-finite BLUP value")
+print(f"BLUP: {len(b_rows)} individuals all finite")
+PY
+echo "[PASS] stacked-psr dense-zkz validation"
+
+# ===== Test 4: stacked-psr dense-zkz grid-reml =====
+echo ""
+"${BIN}" --bfile "${PREFIX}" --gwas \
+  --ordinal-pheno "${PREFIX}.ordinal.pheno" \
+  --ordinal-model --ordinal-mode stacked-psr \
+  --ordinal-stacked-engine dense-zkz \
+  --ordinal-vc-method grid-reml \
+  --ordinal-vc-grid-points 11 \
+  --out "${OUT}.stacked_gridreml" 2>&1 | tail -3
+
+OUT_SG="${OUT}.stacked_gridreml"
+python3 -c "
+import csv, math, sys
+from pathlib import Path
+gwas = Path('${OUT_SG}.gwas.tsv')
+conv = Path('${OUT_SG}.psr.convergence.tsv')
+thr = Path('${OUT_SG}.ordinal.thresholds.tsv')
+blup = Path('${OUT_SG}.ordinal.blup.tsv')
+vc = Path('${OUT_SG}.ordinal.vc.tsv')
+for path in (gwas, conv, thr, blup, vc):
+    if not path.exists() or path.stat().st_size == 0:
+        raise SystemExit(f'Missing grid-reml output: {path}')
+with gwas.open(newline='') as f:
+    rows = list(csv.DictReader(f, delimiter='\t'))
+n = len(rows)
+if n == 0: raise SystemExit('grid-reml: no GWAS rows')
+for col in ['effect', 'se', 'wald_or_stat', 'p_value', 'log10p']:
+    for row in rows:
+        v = float(row[col])
+        if not math.isfinite(v): raise SystemExit(f'grid-reml: non-finite {col}: {v}')
+impl = rows[0].get('ordinal_implementation', '')
+vc_m = rows[0].get('vc_method', '')
+if vc_m != 'grid-reml': raise SystemExit(f'grid-reml: expected vc_method=grid-reml, got {vc_m}')
+sg = float(rows[0].get('sigma2_g', '0'))
+print(f'grid-reml: {n} SNPs finite, vc_method={vc_m}, sigma2_g={sg}')
+with blup.open(newline='') as f:
+    for br in csv.DictReader(f, delimiter='\t'):
+        bv = float(br.get('blup', 'nan'))
+        if not math.isfinite(bv): raise SystemExit(f'grid-reml: non-finite BLUP')
+print(f'BLUP: finite')
+with vc.open(newline='') as f:
+    vr = list(csv.DictReader(f, delimiter='\t'))
+print(f'VC log: {len(vr)} rows, sigma2_g={vr[-1][\"sigma2_g\"]}')
+" && echo "[PASS] stacked-psr dense-zkz grid-reml validation"
+
 echo "[PSR-GWAS] Ordinal validation passed."

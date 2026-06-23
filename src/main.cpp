@@ -47,6 +47,15 @@ void print_usage(const char* prog_name) {
     cout << "  --binomial-pheno <file> Binomial FID IID EVENT TRIAL file\n";
     cout << "  --ordinal-model     Ordinal PSR-GWAS MVP (experimental cumulative-binary)\n";
     cout << "  --ordinal-pheno <file> Ordinal FID IID ORDINAL phenotype file\n";
+    cout << "  --ordinal-mode <name>  Ordinal algorithm: experimental-cumulative-binary (default), stacked-psr\n";
+    cout << "  --ordinal-stacked-engine <name> Engine for stacked-psr: fixed-gls (default), dense-zkz\n";
+    cout << "  --ordinal-vc-method <name>   VC update method: fixed (default), grid-reml\n";
+    cout << "  --ordinal-sigma2-g <float>   Fixed sigma2_g value (default: 0.5)\n";
+    cout << "  --ordinal-vc-grid-min <float> Grid REML min sigma2_g (default: 0.0)\n";
+    cout << "  --ordinal-vc-grid-max <float> Grid REML max sigma2_g (default: 2.0)\n";
+    cout << "  --ordinal-vc-grid-points <n>  Grid REML search points (default: 21)\n";
+    cout << "  --ordinal-allow-fallback Fall back from stacked-psr to experimental cumulative-binary\n";
+    cout << "  --ordinal-test wald|score|robust-score|all  Association test type (default: wald; experimental)\n";
     cout << "  --psr-maxit <n>     Max PSR/PQL iterations (default: 50)\n";
     cout << "  --psr-tol <float>   PSR/PQL convergence tolerance (default: 1e-6)\n";
     cout << "  --psr-mu-eps <float> Mu clipping epsilon for PSR (default: 1e-6)\n";
@@ -109,6 +118,15 @@ int main(int argc, char* argv[]) {
         else if (arg == "--binomial-pheno" && i + 1 < argc) { cfg.binomial_file = argv[++i]; }
         else if (arg == "--ordinal-model") { cfg.ordinal_model = true; }
         else if (arg == "--ordinal-pheno" && i + 1 < argc) { cfg.ordinal_file = argv[++i]; }
+        else if (arg == "--ordinal-mode" && i + 1 < argc) { cfg.ordinal_mode = argv[++i]; }
+        else if (arg == "--ordinal-stacked-engine" && i + 1 < argc) { cfg.ordinal_stacked_engine = argv[++i]; }
+        else if (arg == "--ordinal-vc-method" && i + 1 < argc) { cfg.ordinal_vc_method = argv[++i]; }
+        else if (arg == "--ordinal-sigma2-g" && i + 1 < argc) { cfg.ordinal_sigma2_g = stod(argv[++i]); }
+        else if (arg == "--ordinal-vc-grid-min" && i + 1 < argc) { cfg.ordinal_vc_grid_min = stod(argv[++i]); }
+        else if (arg == "--ordinal-vc-grid-max" && i + 1 < argc) { cfg.ordinal_vc_grid_max = stod(argv[++i]); }
+        else if (arg == "--ordinal-vc-grid-points" && i + 1 < argc) { cfg.ordinal_vc_grid_points = stoi(argv[++i]); }
+        else if (arg == "--ordinal-allow-fallback") { cfg.ordinal_allow_fallback = true; }
+        else if (arg == "--ordinal-test" && i + 1 < argc) { cfg.ordinal_test = argv[++i]; }
         else if (arg == "--psr-maxit" && i + 1 < argc) { cfg.psr_maxit = stoi(argv[++i]); }
         else if (arg == "--psr-tol" && i + 1 < argc) { cfg.psr_tol = stod(argv[++i]); }
         else if (arg == "--psr-mu-eps" && i + 1 < argc) { cfg.psr_mu_eps = stod(argv[++i]); }

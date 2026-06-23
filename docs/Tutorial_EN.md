@@ -105,6 +105,76 @@ The recommended production path is `--repeatability-mode exact`, which uses a re
 
 PSR-GWAS provides a fast scan for non-normal traits. The current implementation uses PSR/PQL linearization to produce a pseudo response and working residual variance, then runs a weighted LMM SNP scan. It is not an exact GLMM. Significant loci should be followed by candidate refinement or external exact GLMM/GMMAT/POLMM validation.
 
+Ordinal traits with at least 3 ordered categories use the experimental cumulative-binary PSR:
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --gwas \
+  --ordinal-model \
+  --ordinal-pheno data/ordinal.pheno \
+  --out results/psr_ordinal
+```
+
+The ordinal mode flag controls the algorithm:
+
+- `--ordinal-mode experimental-cumulative-binary` (default): runs C-1 separate binary PSR scans and picks the best p-value per SNP.
+- `--ordinal-mode stacked-psr`: Stacked proportional-odds PSR first pass. Use `--ordinal-stacked-engine fixed-gls|dense-zkz` to select engine:
+  - `fixed-gls` (default): Stage 1, V=I, no random effects.
+  - `dense-zkz` (experimental): Stage 2A/2B, V = sigma2_g * K_stack + diag(1/w), full Wald scan, individual BLUP output. Requires N_stack <= 2000.
+
+Stage 2B adds variance component estimation. Use `--ordinal-vc-method fixed|grid-reml`:
+- `fixed` (default): sigma2_g stays at `--ordinal-sigma2-g` (default 0.5).
+- `grid-reml`: estimates sigma2_g via grid/profile REML within each PSR iteration. Only works with `--ordinal-stacked-engine dense-zkz`.
+
+Grid search parameters: `--ordinal-vc-grid-min <double>` (default 0.0), `--ordinal-vc-grid-max <double>` (default 2.0), `--ordinal-vc-grid-points <int>` (default 41).
+
+With `grid-reml`, a new output file `.ordinal.vc.tsv` records the VC log per iteration, and `.gwas.tsv` includes `vc_method`, `vc_update`, and `sigma2_g` fields.
+
+```bash
+# Stage 2B grid-reml
+./cosmicscanner --bfile data/geno --gwas \
+  --ordinal-model --ordinal-pheno data/ordinal.pheno \
+  --ordinal-mode stacked-psr \
+  --ordinal-stacked-engine dense-zkz \
+  --ordinal-vc-method grid-reml
+```
+
+All 4 ordinal methods are available in v0.5:
+
+| Method | CLI | BLUP | Sigma2_g |
+|--------|-----|------|----------|
+| cumulative-binary | `--ordinal-mode experimental-cumulative-binary` (default) | No | N/A |
+| fixed-gls | `--ordinal-mode stacked-psr --ordinal-stacked-engine fixed-gls` | No | Fixed 0.5 |
+| dense-zkz-fixed | `--ordinal-mode stacked-psr --ordinal-stacked-engine dense-zkz --ordinal-vc-method fixed` | Yes | Fixed 0.5 |
+| dense-zkz-grid-reml | `--ordinal-mode stacked-psr --ordinal-stacked-engine dense-zkz --ordinal-vc-method grid-reml` | Yes | REML-estimated |
+
+Method selection guide:
+- **Baseline/comparison**: cumulative-binary
+- **Fast genome-wide scan**: fixed-gls (fastest stacked PSR)
+- **BLUP needed, fixed VC**: dense-zkz-fixed
+- **Full VC estimation**: dense-zkz-grid-reml (recommended default for production)
+
+New benchmark and validation scripts under `tests/`:
+- `run_psr_v05_ordinal_benchmark.py` — standalone per-method benchmark with summary TSVs and markdown report output
+- `run_psr_v05_validation_benchmark.sh` — wrapper with integrity checks (all 4 methods, output schema)
+- `compare_psr_benchmarks.py` — compare benchmark results across commits
+
+Run the formal simulation across all ordinal methods:
+```bash
+PSR_FORMAL_TRAITS=ordinal PSR_FORMAL_ORDINAL_METHODS=all \
+  PSR_FORMAL_REPS=5 PSR_FORMAL_N=200 \
+  python3 tests/run_psr_formal_simulation.py
+```
+
+Run the standalone ordinal benchmark:
+```bash
+PSR_V05_BENCH_REPS=5 PSR_V05_BENCH_N=200 \
+  bash tests/run_psr_v05_validation_benchmark.sh
+```
+
+See `docs/tutorials/psr_gwas_ordinal_tutorial.md` for a dedicated ordinal tutorial, `docs/PSR_GWAS_V0.5_VALIDATION_REPORT.md` for the v0.5 validation report, `docs/PSR_GWAS_V0.5_STACKED_ORDINAL_SUMMARY.md`, `docs/PSR_GWAS_V0.5_STAGE2A_DENSE_ZKZ_SUMMARY.md`, and `docs/PSR_GWAS_V0.5_STAGE2B_VC_UPDATE_SUMMARY.md` for stage details. Use `--ordinal-allow-fallback` to fall back to experimental cumulative-binary if stacked fails.
+
 Binary traits can use the probit/logit threshold model:
 
 ```bash
@@ -221,6 +291,17 @@ For longitudinal/trajectory phenotypes:
 | | `--family poisson\|binomial\|negbin` | Count model family; `negbin` is still experimental |
 | | `--offset <file>` | Poisson log-offset/exposure, one value per sample |
 | | `--binomial-pheno <file>` | Binomial event/trial phenotype file: `FID IID EVENT TRIAL` |
+| | `--ordinal-model` | Enable experimental ordinal PSR-GWAS |
+| | `--ordinal-pheno <file>` | Ordinal phenotype file: `FID IID ORDINAL_LEVEL` |
+| | `--ordinal-mode <name>` | Ordinal algorithm: `experimental-cumulative-binary` (default) or `stacked-psr` |
+| | `--ordinal-stacked-engine <name>` | Engine for stacked-psr: `fixed-gls` (default, Stage 1 V=I) or `dense-zkz` (Stage 2A/2B, V=ZKZ' + BLUP) |
+| | `--ordinal-vc-method <name>` | VC estimation method: `fixed` (default, sigma2_g constant) or `grid-reml` (grid/profile REML within PSR) |
+| | `--ordinal-sigma2-g <f>` | Initial/override sigma2_g value (default: 0.5) |
+| | `--ordinal-vc-grid-min <f>` | Grid search lower bound (default: 0.0) |
+| | `--ordinal-vc-grid-max <f>` | Grid search upper bound (default: 2.0) |
+| | `--ordinal-vc-grid-points <n>` | Grid search points (default: 41) |
+| | `--ordinal-test <name>` | Stacked-PSR association test / diagnostics: `wald` (default), `score`, `robust-score`, or `all` |
+| | `--ordinal-allow-fallback` | Allow falling back from stacked-psr to experimental cumulative-binary |
 | | `--psr-maxit <n>` | PSR/PQL maximum iterations; default 50 |
 | | `--psr-tol <f>` | PSR/PQL convergence tolerance; default 1e-6 |
 | | `--psr-mu-eps <f>` | PSR mean clipping epsilon; default 1e-6 |
@@ -237,7 +318,7 @@ For longitudinal/trajectory phenotypes:
 | | `--make-grm-alg 6` | EMmvGWAS-compatible GRM: `Z=dosage-1`, normalized by `mean(diag(Z Z'))`; intended for compatibility validation only |
 | | `--repeatability-mixed-precision`| Use Float32 to reduce memory footprint |
 | | `--repeatability-grm-cache <pre>`| Enable `mmap` cache for extremely fast reruns |
-# PSR-GWAS v0.4 Parity Notes
+# PSR-GWAS v0.4.1 Validation Notes
 
 CosmicScanner PSR-GWAS is a PSR/PQL approximation, not exact GLMM inference.
 
@@ -245,12 +326,17 @@ CosmicScanner PSR-GWAS is a PSR/PQL approximation, not exact GLMM inference.
 - Binary traits: `--threshold-model --link probit|logit`.
 - Poisson traits: `--count-model --family poisson`.
 - Binomial event/trial traits: `--count-model --family binomial --binomial-pheno FID_IID_EVENT_TRIAL.txt`.
-- Ordinal traits: `--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`; current v0.4 mode is `experimental_cumulative_binary` and is not full stacked proportional-odds PSR-GLMM parity.
+- Ordinal traits: `--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`.
+  - Default: `experimental_cumulative_binary` (cumulative-binary approximation).
+  - Recommended v0.5 stacked PSR: `--ordinal-mode stacked-psr --ordinal-stacked-engine dense-zkz --ordinal-vc-method grid-reml`.
+  - Use `--ordinal-test all` to write score diagnostics; keep the default corrected Wald result for primary inference. See `docs/PSR_GWAS_V0.5_SCORE_TEST_DIAGNOSTIC_PLAN.md`.
 
-Run the full v0.4 validation suite with:
+Run the full v0.4.1 validation suite with:
 
 ```bash
 bash tests/run_psr_full_parity_validation.sh
 ```
+
+Outputs include formal simulation report (`tests/results/psr_formal_simulation/psr_formal_simulation_report.md`), accuracy/speed report (`tests/results/psr_gwas_smoke/psr_accuracy_speed_report.md`), and ordinal design check (`tests/results/psr_ordinal_full_design/full_ordinal_design_check.tsv`).
 
 Official PSR-GLMM/R availability is tracked but not required for CI. Alternative benchmarks use R GLM baselines and optional Firth, glmer, glmmTMB, and ordinal tools when installed.

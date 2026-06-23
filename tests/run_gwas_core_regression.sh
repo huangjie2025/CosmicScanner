@@ -196,6 +196,7 @@ fi
 
 if [[ ${RUN_PSR} -eq 1 ]]; then
   run_step "PSR-GWAS smoke" bash "${ROOT}/tests/run_psr_gwas_validation.sh"
+  run_step "PSR-GWAS ordinal dense-zkz" bash "${ROOT}/tests/run_psr_ordinal_dense_zkz_validation.sh"
 fi
 
 if [[ ${RUN_PGEN} -eq 1 ]]; then

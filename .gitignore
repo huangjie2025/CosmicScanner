@@ -1,3 +1,8 @@
 build/
 tests/__pycache__/
 tests/results/
+tests/data/psr_gwas_smoke/
+tests/data/psr_normal_special_case/
+tests/data/psr_ordinal_smoke/
+tests/data/psr_ordinal_stacked_smoke/
+tests/data/psr_ordinal_dense_zkz_validation/

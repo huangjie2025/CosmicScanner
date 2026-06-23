@@ -61,6 +61,15 @@ struct GwasConfig {
     std::string offset_file;
     std::string binomial_file;
     std::string ordinal_file;
+    std::string ordinal_mode = "experimental-cumulative-binary";
+    std::string ordinal_stacked_engine = "fixed-gls";
+    std::string ordinal_vc_method = "fixed";
+    double ordinal_sigma2_g = 0.5;
+    double ordinal_vc_grid_min = 0.0;
+    double ordinal_vc_grid_max = 2.0;
+    int ordinal_vc_grid_points = 21;
+    bool ordinal_allow_fallback = false;
+    std::string ordinal_test = "wald";   // wald, score, robust-score, all
     int psr_maxit = 50;
     double psr_tol = 1e-6;
     double psr_mu_eps = 1e-6;

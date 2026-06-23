@@ -29,6 +29,17 @@ The wrapper runs stable CI, binary/binomial/Poisson validation, normal special-c
 - `tests/results/psr_gwas_smoke/psr_runtime_summary.tsv`
 - `tests/results/psr_gwas_smoke/psr_method_availability.tsv`
 - `tests/results/psr_gwas_smoke/psr_gwas_parity_matrix.tsv`
+- `tests/results/psr_gwas_smoke/psr_accuracy_speed_report.md`
+- `tests/results/psr_formal_simulation/psr_formal_simulation_report.md`
+- `tests/results/psr_ordinal_full_design/full_ordinal_design_check.tsv`
+
+## v0.4.1 Additions
+
+- Formal simulation (`tests/run_psr_formal_simulation.py`) expanded with scenarios for binary null_rare, link_logit, poisson null_offset, binomial null_rare_prop/null_balanced_prop, and generates `psr_formal_simulation_report.md`.
+- Accuracy/speed benchmark (`tests/run_psr_accuracy_speed_benchmark.py`) now generates `psr_accuracy_speed_report.md` with per-trait accuracy, runtime, and method availability.
+- CLI: `--ordinal-mode experimental-cumulative-binary|stacked-psr` and `--ordinal-allow-fallback` added.
+- Full ordinal PSR design document: `docs/PSR_GWAS_FULL_ORDINAL_DESIGN.md` (status: `design_only`).
+- Full ordinal design check: `tests/run_psr_full_ordinal_design_check.sh` reports `full_ordinal_psr_status`.
 
 ## External References
 
@@ -36,4 +47,4 @@ The official PSR-GLMM/R URL is tracked by `tests/check_psr_glmm_r_availability.s
 
 ## Scope Limits
 
-PSR-GWAS remains a PSR/PQL approximation, not exact GLMM inference. Repeated-measure PSR-GLMM and random-regression PSR-GWAS remain roadmap items. Negative binomial remains experimental and should not be treated as stable parity output.
+PSR-GWAS remains a PSR/PQL approximation, not exact GLMM inference. Repeated-measure PSR-GLMM and random-regression PSR-GWAS remain roadmap items. Negative binomial remains experimental and should not be treated as stable parity output. Stacked proportional-odds PSR-GWAS is design-only.

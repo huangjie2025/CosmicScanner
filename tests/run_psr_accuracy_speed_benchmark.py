@@ -174,10 +174,71 @@ def main() -> None:
         ord_row["status_class"] = "CONVERGED_WITH_WARNING" if "experimental" in ord_row["error_message"] else "OK"
     rows.append(ord_row)
 
+    # stacked-psr fixed-gls
+    stacked_fixed_assoc = ORDINAL_RESULT / "cosmic_ordinal.stacked_fixed.gwas.tsv"
+    if stacked_fixed_assoc.exists():
+        stacked_fixed = base_row("ordinal_stacked_fixed", "ordinal_smoke", "CosmicScanner", "stacked_psr_fixed_gls", "cosmicscanner_psr", 0.0, "TRUE", "")
+        stacked_fixed["m"] = str(len(read_tsv(stacked_fixed_assoc)))
+        rows.append(stacked_fixed)
+
+    # stacked-psr dense-zkz
+    stacked_dense_assoc = ORDINAL_RESULT / "cosmic_ordinal.stacked_densezkz.gwas.tsv"
+    if stacked_dense_assoc.exists():
+        stacked_dense = base_row("ordinal_stacked_dense_zkz", "ordinal_smoke", "CosmicScanner", "stacked_psr_dense_zkz_blup", "cosmicscanner_psr", 0.0, "TRUE", "")
+        stacked_dense["m"] = str(len(read_tsv(stacked_dense_assoc)))
+        rows.append(stacked_dense)
+
     write_rows(RESULT / "psr_accuracy_speed_summary.tsv", rows)
     write_rows(RESULT / "psr_accuracy_detail.tsv", rows)
     write_rows(RESULT / "psr_runtime_summary.tsv", rows, ["trait_type", "dataset", "engine", "runtime_sec", "memory_mb_if_available", "status_class"])
     print(f"[PSR-GWAS] Accuracy/speed benchmark written to {RESULT / 'psr_accuracy_speed_summary.tsv'}")
+
+    generate_report(rows, avail_path)
+
+
+def generate_report(rows, avail_path):
+    report_path = RESULT / "psr_accuracy_speed_report.md"
+    avail = {r["method"]: r for r in read_tsv(avail_path)} if avail_path.exists() else {}
+    lines = ["# PSR-GWAS Accuracy/Speed Benchmark Report", f"Date: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}", ""]
+    lines.append("## Trait Coverage Summary")
+    covered = set(r["trait_type"] for r in rows)
+    for tt in ["normal", "binary", "binomial", "poisson", "ordinal"]:
+        status = "stable" if tt != "ordinal" else "experimental"
+        note = "LMM special case" if tt == "normal" else ("experimental cumulative-binary" if tt == "ordinal" else "PSR/PQL stable")
+        ok = "YES" if tt in covered else "NO"
+        lines.append(f"- **{tt}**: {ok} ({status}) — {note}")
+    lines.append("")
+    lines.append("## Accuracy (CosmicScanner vs R baseline)")
+    has_corr = [r for r in rows if r.get("log10p_corr", "NA") not in ("NA", "")]
+    if has_corr:
+        for r in has_corr:
+            lines.append(f"- {r['trait_type']}: log10p_corr={r['log10p_corr']}, beta_corr={r['beta_corr']}, top10_overlap={r['top10_overlap']}")
+    else:
+        lines.append("- No accuracy comparisons available (R baseline not yet generated)")
+    lines.append("")
+    lines.append("## Runtime Summary")
+    for r in sorted(rows, key=lambda x: x.get("runtime_sec", "999")):
+        lines.append(f"- {r['trait_type']} ({r['method']}): {r['runtime_sec']}s")
+    lines.append("")
+    lines.append("## R Method Availability")
+    if avail:
+        for method, info in sorted(avail.items()):
+            avail_flag = info.get("method_available", "FALSE")
+            err = info.get("error_message", "")
+            lines.append(f"- {method}: available={avail_flag}" + (f" ({err})" if err else ""))
+    else:
+        lines.append("- (not checked)")
+    lines.append("")
+    lines.append("## Notes")
+    lines.append("- Normal: Gaussian identity-link special case via standard LMM GWAS")
+    lines.append("- Binary/Binomial/Poisson: PSR/PQL approximation with weighted LMM scan")
+    lines.append("- Ordinal: supports experimental cumulative-binary, stacked-psr fixed-gls (Stage 1), and stacked-psr dense-zkz (Stage 2A, experimental)")
+    lines.append("- Stacked-psr dense-zkz uses V = sigma2_g * K_stack + diag(1/w) for GLS update and full Wald scan; outputs individual-level BLUP")
+    lines.append("- R baseline uses GLM for non-mixed comparisons when applicable")
+    lines.append("- PSR-GLMM/R official tool (http://106.13.144.206/psrglmm/) is externally tracked but not a CI dependency")
+    lines.append("- External R packages (logistf, lme4, glmmTMB, MASS, ordinal, POLMM) are optional; missing packages do not fail CI")
+    report_path.write_text("\n".join(lines) + "\n")
+    print(f"[PSR-GWAS] Report: {report_path}")
 
 
 if __name__ == "__main__":
