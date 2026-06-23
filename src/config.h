@@ -24,6 +24,7 @@ struct GwasConfig {
     bool repeatability_model = false;
     bool threshold_model = false;
     bool count_model = false;
+    bool ordinal_model = false;
     bool rrm_model = false;
     bool make_grm = false;
     bool make_grm_sparse = false;
@@ -59,6 +60,7 @@ struct GwasConfig {
     std::string family_type = "poisson";
     std::string offset_file;
     std::string binomial_file;
+    std::string ordinal_file;
     int psr_maxit = 50;
     double psr_tol = 1e-6;
     double psr_mu_eps = 1e-6;

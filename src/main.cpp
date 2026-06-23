@@ -45,6 +45,8 @@ void print_usage(const char* prog_name) {
     cout << "  --family <type>     Count family: poisson, negbin, or binomial (default: poisson)\n";
     cout << "  --offset <file>     One numeric log-offset/exposure value per sample\n";
     cout << "  --binomial-pheno <file> Binomial FID IID EVENT TRIAL file\n";
+    cout << "  --ordinal-model     Ordinal PSR-GWAS MVP (experimental cumulative-binary)\n";
+    cout << "  --ordinal-pheno <file> Ordinal FID IID ORDINAL phenotype file\n";
     cout << "  --psr-maxit <n>     Max PSR/PQL iterations (default: 50)\n";
     cout << "  --psr-tol <float>   PSR/PQL convergence tolerance (default: 1e-6)\n";
     cout << "  --psr-mu-eps <float> Mu clipping epsilon for PSR (default: 1e-6)\n";
@@ -105,6 +107,8 @@ int main(int argc, char* argv[]) {
         else if (arg == "--family" && i + 1 < argc) { cfg.family_type = argv[++i]; }
         else if (arg == "--offset" && i + 1 < argc) { cfg.offset_file = argv[++i]; }
         else if (arg == "--binomial-pheno" && i + 1 < argc) { cfg.binomial_file = argv[++i]; }
+        else if (arg == "--ordinal-model") { cfg.ordinal_model = true; }
+        else if (arg == "--ordinal-pheno" && i + 1 < argc) { cfg.ordinal_file = argv[++i]; }
         else if (arg == "--psr-maxit" && i + 1 < argc) { cfg.psr_maxit = stoi(argv[++i]); }
         else if (arg == "--psr-tol" && i + 1 < argc) { cfg.psr_tol = stod(argv[++i]); }
         else if (arg == "--psr-mu-eps" && i + 1 < argc) { cfg.psr_mu_eps = stod(argv[++i]); }

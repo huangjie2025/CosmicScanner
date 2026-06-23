@@ -19,6 +19,7 @@
 #include "design.h"
 #include "models/threshold_model.h"
 #include "models/count_model.h"
+#include "models/ordinal_model.h"
 
 using namespace std;
 using namespace cosmic;
@@ -198,22 +199,34 @@ auto start_time = chrono::high_resolution_clock::now();
             cout << "Running GWAS...\n";
             
             if (cfg.threshold_model) {
-                if (cfg.count_model || rrm_model || repeatability_model || multivariate) {
+                if (cfg.count_model || cfg.ordinal_model || rrm_model || repeatability_model || multivariate) {
                     throw runtime_error("PSR-GWAS model flags are mutually exclusive with other GWAS models.");
                 }
                 cout << "--- Threshold/Probit PSR-GWAS Model ---\n";
                 ThresholdModel model(ThresholdModel::Options::fromConfig(cfg));
                 model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
                 model.run();
+                return 0;
 
             } else if (cfg.count_model) {
-                if (rrm_model || repeatability_model || multivariate) {
+                if (cfg.ordinal_model || rrm_model || repeatability_model || multivariate) {
                     throw runtime_error("PSR-GWAS model flags are mutually exclusive with other GWAS models.");
                 }
                 cout << "--- Count/Binomial PSR-GWAS Model ---\n";
                 CountModel model(CountModel::Options::fromConfig(cfg));
                 model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
                 model.run();
+                return 0;
+
+            } else if (cfg.ordinal_model) {
+                if (rrm_model || repeatability_model || multivariate) {
+                    throw runtime_error("PSR-GWAS model flags are mutually exclusive with other GWAS models.");
+                }
+                cout << "--- Ordinal PSR-GWAS Model (experimental cumulative-binary) ---\n";
+                OrdinalModel model(OrdinalModel::Options::fromConfig(cfg));
+                model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+                model.run();
+                return 0;
 
             } else if (rrm_model) {
                 if (long_pheno_file.empty()) throw runtime_error("RRM model requires --long-pheno file.");
