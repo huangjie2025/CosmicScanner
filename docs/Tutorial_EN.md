@@ -237,3 +237,20 @@ For longitudinal/trajectory phenotypes:
 | | `--make-grm-alg 6` | EMmvGWAS-compatible GRM: `Z=dosage-1`, normalized by `mean(diag(Z Z'))`; intended for compatibility validation only |
 | | `--repeatability-mixed-precision`| Use Float32 to reduce memory footprint |
 | | `--repeatability-grm-cache <pre>`| Enable `mmap` cache for extremely fast reruns |
+# PSR-GWAS v0.4 Parity Notes
+
+CosmicScanner PSR-GWAS is a PSR/PQL approximation, not exact GLMM inference.
+
+- Normal traits: use existing LMM GWAS as the Gaussian identity-link special case.
+- Binary traits: `--threshold-model --link probit|logit`.
+- Poisson traits: `--count-model --family poisson`.
+- Binomial event/trial traits: `--count-model --family binomial --binomial-pheno FID_IID_EVENT_TRIAL.txt`.
+- Ordinal traits: `--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`; current v0.4 mode is `experimental_cumulative_binary` and is not full stacked proportional-odds PSR-GLMM parity.
+
+Run the full v0.4 validation suite with:
+
+```bash
+bash tests/run_psr_full_parity_validation.sh
+```
+
+Official PSR-GLMM/R availability is tracked but not required for CI. Alternative benchmarks use R GLM baselines and optional Firth, glmer, glmmTMB, and ordinal tools when installed.

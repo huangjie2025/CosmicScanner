@@ -390,3 +390,20 @@ bash tests/run_gwas_core_regression.sh --fast --with-psr
 | | `--make-grm-alg 6` | EMmvGWAS-compatible GRM：`Z=dosage-1` 且按 `mean(diag(Z Z'))` 归一化，仅建议用于兼容验证 |
 | | `--repeatability-mixed-precision`| 重复力模型中使用 Float32 降低内存占用 |
 | | `--repeatability-grm-cache <pre>`| 开启 mmap 磁盘缓存复用机制 |
+# PSR-GWAS v0.4 对标说明
+
+CosmicScanner PSR-GWAS 是 PSR/PQL 近似方法，不是 exact GLMM 推断。
+
+- normal 性状：作为 Gaussian identity-link 特例，直接复用现有 LMM GWAS。
+- binary 性状：`--threshold-model --link probit|logit`。
+- Poisson 性状：`--count-model --family poisson`。
+- binomial event/trial 性状：`--count-model --family binomial --binomial-pheno FID_IID_EVENT_TRIAL.txt`。
+- ordinal 性状：`--ordinal-model --ordinal-pheno FID_IID_ORDINAL.txt`；当前 v0.4 是 `experimental_cumulative_binary`，不是 full stacked proportional-odds PSR-GLMM parity。
+
+完整 v0.4 验证：
+
+```bash
+bash tests/run_psr_full_parity_validation.sh
+```
+
+官方 PSR-GLMM/R 只做 availability tracking，不作为 CI 阻塞依赖。替代 benchmark 使用 R GLM baseline，并在安装时记录 optional Firth、glmer、glmmTMB、ordinal 工具结果。
