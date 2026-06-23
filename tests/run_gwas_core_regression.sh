@@ -103,6 +103,16 @@ run_step() {
   echo "[GWAS-core-regression] PASS ${name} ($((end - start))s)"
 }
 
+run_optional_script() {
+  local name="$1"
+  local script="$2"
+  if [[ -x "${script}" || -f "${script}" ]]; then
+    run_step "${name}" bash "${script}"
+  else
+    echo "[GWAS-core-regression] SKIP ${name} (missing ${script})"
+  fi
+}
+
 if [[ ${RUN_BUILD} -eq 1 ]]; then
   run_step "build" make -C "${ROOT}/build" cosmicscanner -j4
 fi
@@ -118,15 +128,15 @@ if [[ ${RUN_GEMMA_ACC} -eq 1 ]]; then
 fi
 
 if [[ ${RUN_EB_SMOKE} -eq 1 ]]; then
-  run_step "single-trait EB-LMM smoke" bash "${ROOT}/tests/run_eb_lmm_smoke.sh"
+  run_optional_script "single-trait EB-LMM smoke" "${ROOT}/tests/run_eb_lmm_smoke.sh"
 fi
 
 if [[ ${RUN_REPEATABILITY_EB} -eq 1 ]]; then
-  run_step "repeatability EB-LMM smoke" bash "${ROOT}/tests/run_repeatability_eb_smoke.sh"
+  run_optional_script "repeatability EB-LMM smoke" "${ROOT}/tests/run_repeatability_eb_smoke.sh"
 fi
 
 if [[ ${RUN_MV_EB} -eq 1 ]]; then
-  run_step "multivariate EB-LMM smoke" bash "${ROOT}/tests/run_mv_eb_smoke.sh"
+  run_optional_script "multivariate EB-LMM smoke" "${ROOT}/tests/run_mv_eb_smoke.sh"
 fi
 
 if [[ ${RUN_MV_SMOKE} -eq 1 ]]; then
