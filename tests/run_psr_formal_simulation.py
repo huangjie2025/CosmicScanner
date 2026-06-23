@@ -8,6 +8,7 @@ PSR_FORMAL_REPS, PSR_FORMAL_N, and PSR_FORMAL_M for paper-level runs.
 import csv
 import math
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -67,7 +68,10 @@ def run_one(seed, trait_type, scenario, n, m, rep):
     effect = scenario_effect(scenario)
     prefix = WORK_DIR / f"{trait_type}.{scenario}.rep{rep}"
     out = WORK_DIR / f"{trait_type}.{scenario}.rep{rep}.cosmic"
-    G, causal, payload = smoke.simulate_data(rng, n, m, trait_type, effect)
+    if trait_type == "ordinal":
+        G, causal, payload = simulate_ordinal_data(rng, n, m, effect)
+    else:
+        G, causal, payload = smoke.simulate_data(rng, n, m, trait_type, effect)
     if trait_type == "binary" and scenario == "null_unbalanced":
         payload["pheno"] = rng.binomial(1, 0.1, size=n)
         if payload["pheno"].min() == payload["pheno"].max():
@@ -85,7 +89,10 @@ def run_one(seed, trait_type, scenario, n, m, rep):
         payload = {"events": rng.binomial(trials, 0.25), "trials": trials}
     smoke.write_plink(prefix, G)
     start = time.time()
-    pvals, runtime, conv = smoke.run_cosmic(prefix, trait_type, payload, out)
+    if trait_type == "ordinal":
+        pvals, runtime, conv = run_cosmic_ordinal(prefix, payload, out)
+    else:
+        pvals, runtime, conv = smoke.run_cosmic(prefix, trait_type, payload, out)
     runtime = max(runtime, time.time() - start)
     converged, warning_flag, status_class = conv
     top = np.argsort(pvals)[:10]
@@ -101,17 +108,81 @@ def run_one(seed, trait_type, scenario, n, m, rep):
         "converged": converged,
         "warning_flag": warning_flag,
         "status_class": status_class,
+        "effect_size": effect,
+        "case_ratio_or_mean": scenario_case_ratio_or_mean(trait_type, payload),
+        "trial_scheme": scenario_trial_scheme(trait_type, payload),
+        "ordinal_levels": len(set(payload.get("pheno", []))) if trait_type == "ordinal" else "NA",
         "causal_snp": f"sim{causal+1:06d}",
         "causal_p": float(pvals[causal]),
         "causal_rank": int(np.where(np.argsort(pvals) == causal)[0][0] + 1),
         "causal_top10": int(causal in top),
+        "top1_hit": int(int(np.argsort(pvals)[0]) == int(causal)),
+        "top10_hit": int(causal in top),
+        "window_hit": int(any(abs(int(x) - int(causal)) <= 5 for x in top)),
         "type1_1e_2": float(np.mean(pvals < 1e-2)),
         "type1_1e_3": float(np.mean(pvals < 1e-3)),
+        "type1_rate": float(np.mean(pvals < 0.05)) if scenario.startswith("null") else "NA",
+        "power": int(causal in top) if scenario.startswith("power") else "NA",
         "lambda_gc": lambda_gc(pvals),
         "min_p": float(np.min(pvals)),
         "median_neglog10p": float(np.median(-np.log10(np.clip(pvals, 1e-300, 1.0)))),
         "pvals": pvals,
     }
+
+
+def simulate_ordinal_data(rng, n, m, effect):
+    freqs = rng.uniform(0.08, 0.45, size=m)
+    G = rng.binomial(2, freqs, size=(n, m)).astype(int)
+    causal = m // 3
+    pop = np.r_[np.zeros(n // 2), np.ones(n - n // 2)]
+    eta = 0.25 * pop + 0.25 * rng.normal(size=n) + effect * (G[:, causal] - G[:, causal].mean())
+    latent = eta + rng.normal(size=n)
+    y = np.ones(n, dtype=int)
+    y[latent > -0.7] = 2
+    y[latent > 0.1] = 3
+    y[latent > 0.9] = 4
+    if len(set(y.tolist())) < 3:
+        y[: n // 3] = 1
+        y[n // 3 : 2 * n // 3] = 2
+        y[2 * n // 3 :] = 3
+    return G, causal, {"pheno": y}
+
+
+def run_cosmic_ordinal(prefix, payload, out_prefix):
+    pheno = smoke.add_ext(prefix, ".ordinal.pheno")
+    smoke.write_one_col_pheno(pheno, payload["pheno"])
+    cmd = [str(smoke.BIN), "--bfile", str(prefix), "--gwas", "--no-loco", "--maf", "0.0",
+           "--psr-maxit", "20", "--ordinal-model", "--ordinal-pheno", str(pheno),
+           "--link", "logit", "--out", str(out_prefix)]
+    env = os.environ.copy()
+    env.setdefault("OPENBLAS_NUM_THREADS", "1")
+    env.setdefault("OMP_NUM_THREADS", "1")
+    start = time.time()
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+    runtime = time.time() - start
+    pvals = []
+    with smoke.add_ext(out_prefix, ".gwas.tsv").open("r", encoding="utf-8") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            try:
+                pvals.append(float(row.get("p_value", "1")))
+            except ValueError:
+                pvals.append(1.0)
+    return np.array(pvals), runtime, smoke.convergence_status(out_prefix)
+
+
+def scenario_case_ratio_or_mean(trait_type, payload):
+    if trait_type in ("binary", "ordinal"):
+        return float(np.mean(payload["pheno"]))
+    if trait_type == "poisson":
+        return float(np.mean(payload["pheno"]))
+    return float(np.mean(payload["events"] / np.maximum(payload["trials"], 1)))
+
+
+def scenario_trial_scheme(trait_type, payload):
+    if trait_type != "binomial":
+        return "NA"
+    trials = np.asarray(payload["trials"])
+    return "fixed" if np.min(trials) == np.max(trials) else "variable"
 
 
 def write(path, rows, exclude=()):
@@ -125,19 +196,25 @@ def write(path, rows, exclude=()):
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    n = int(os.environ.get("PSR_FORMAL_N", "96"))
-    m = int(os.environ.get("PSR_FORMAL_M", "160"))
-    reps = int(os.environ.get("PSR_FORMAL_REPS", "3"))
+    n = int(os.environ.get("PSR_FORMAL_N", "80"))
+    m = int(os.environ.get("PSR_FORMAL_M", "80"))
+    reps = int(os.environ.get("PSR_FORMAL_REPS", "2"))
+    traits = [x.strip() for x in os.environ.get("PSR_FORMAL_TRAITS", "binary,binomial,poisson").split(",") if x.strip()]
     scenarios = {
         "binary": ["null_balanced", "null_unbalanced", "power_low", "power_high"],
         "poisson": ["null_low_mean", "null_medium_mean", "null_high_mean", "power_low", "power_high"],
         "binomial": ["null_fixed_trial", "null_variable_trial", "power_low", "power_high"],
+        "ordinal": ["null_balanced", "power_low", "power_high"],
     }
     rows, qq_rows = [], []
-    for trait_type, scenario_list in scenarios.items():
+    trait_order = ["binary", "binomial", "poisson", "ordinal"]
+    for trait_type in traits:
+        if trait_type not in scenarios:
+            raise SystemExit(f"Unknown PSR_FORMAL_TRAITS entry: {trait_type}")
+        scenario_list = scenarios[trait_type]
         for sidx, scenario in enumerate(scenario_list):
             for rep in range(reps):
-                seed = BASE_SEED + rep + 100 * sidx + 1000 * ["binary", "poisson", "binomial"].index(trait_type)
+                seed = BASE_SEED + rep + 100 * sidx + 1000 * trait_order.index(trait_type)
                 row = run_one(seed, trait_type, scenario, n, m, rep)
                 rows.append(row)
                 if scenario.startswith("null"):

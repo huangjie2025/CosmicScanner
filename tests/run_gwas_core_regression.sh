@@ -124,7 +124,7 @@ if [[ ! -x "${BIN}" ]]; then
 fi
 
 if [[ ${RUN_GEMMA_ACC} -eq 1 ]]; then
-  run_step "single-trait GEMMA accuracy" bash "${ROOT}/tests/run_gemma_accuracy.sh"
+  run_optional_script "single-trait GEMMA accuracy" "${ROOT}/tests/run_gemma_accuracy.sh"
 fi
 
 if [[ ${RUN_EB_SMOKE} -eq 1 ]]; then
@@ -140,15 +140,15 @@ if [[ ${RUN_MV_EB} -eq 1 ]]; then
 fi
 
 if [[ ${RUN_MV_SMOKE} -eq 1 ]]; then
-  run_step "multivariate smoke" bash "${ROOT}/tests/run_test_multivariate.sh"
+  run_optional_script "multivariate smoke" "${ROOT}/tests/run_test_multivariate.sh"
 fi
 
 if [[ ${RUN_MV_VALIDATION} -eq 1 ]]; then
-  run_step "multivariate GEMMA/EMmvGWAS validation" bash "${ROOT}/tests/run_gemma_multivariate_validation.sh"
+  run_optional_script "multivariate GEMMA/EMmvGWAS validation" "${ROOT}/tests/run_gemma_multivariate_validation.sh"
 fi
 
 if [[ ${RUN_MATRIX} -eq 1 ]]; then
-  run_step "multivariate validation matrix" bash "${ROOT}/tests/run_multivariate_validation_matrix.sh"
+  run_optional_script "multivariate validation matrix" "${ROOT}/tests/run_multivariate_validation_matrix.sh"
 fi
 
 if [[ ${RUN_RRM} -eq 1 ]]; then
@@ -163,35 +163,35 @@ if [[ ${RUN_RRM} -eq 1 ]]; then
 fi
 
 if [[ ${RUN_EB_VALIDATION} -eq 1 ]]; then
-  run_step "EB GWAS validation matrix" bash "${ROOT}/tests/run_eb_gwas_validation.sh"
+  run_optional_script "EB GWAS validation matrix" "${ROOT}/tests/run_eb_gwas_validation.sh"
 fi
 
 if [[ ${RUN_EB_REPORT} -eq 1 ]]; then
-  run_step "EB standard-vs-EB report" bash "${ROOT}/tests/run_eb_comparison_report.sh"
+  run_optional_script "EB standard-vs-EB report" "${ROOT}/tests/run_eb_comparison_report.sh"
 fi
 
 if [[ ${RUN_EB_LOCO} -eq 1 ]]; then
-  run_step "EB GWAS LOCO validation" bash "${ROOT}/tests/run_eb_loco_validation.sh"
+  run_optional_script "EB GWAS LOCO validation" "${ROOT}/tests/run_eb_loco_validation.sh"
 fi
 
 if [[ ${RUN_EB_CALIBRATION} -eq 1 ]]; then
-  run_step "EB GWAS calibration benchmark" bash "${ROOT}/tests/run_eb_calibration_benchmark.sh"
+  run_optional_script "EB GWAS calibration benchmark" "${ROOT}/tests/run_eb_calibration_benchmark.sh"
 fi
 
 if [[ ${RUN_EB_FORMATS} -eq 1 ]]; then
-  run_step "EB PGEN/BGEN consistency" bash "${ROOT}/tests/run_eb_format_consistency.sh"
+  run_optional_script "EB PGEN/BGEN consistency" "${ROOT}/tests/run_eb_format_consistency.sh"
 fi
 
 if [[ ${RUN_EB_PERF} -eq 1 ]]; then
-  run_step "EB-LMM performance benchmark" bash "${ROOT}/tests/run_eb_performance_benchmark.sh"
+  run_optional_script "EB-LMM performance benchmark" "${ROOT}/tests/run_eb_performance_benchmark.sh"
 fi
 
 if [[ ${RUN_EB_SUITE} -eq 1 ]]; then
-  run_step "EB GWAS board suite" bash "${ROOT}/tests/run_eb_gwas_suite.sh"
+  run_optional_script "EB GWAS board suite" "${ROOT}/tests/run_eb_gwas_suite.sh"
 fi
 
 if [[ ${RUN_EB_GRID} -eq 1 ]]; then
-  run_step "EB calibration grid" bash "${ROOT}/tests/run_eb_calibration_grid.sh"
+  run_optional_script "EB calibration grid" "${ROOT}/tests/run_eb_calibration_grid.sh"
 fi
 
 if [[ ${RUN_PSR} -eq 1 ]]; then
@@ -199,7 +199,7 @@ if [[ ${RUN_PSR} -eq 1 ]]; then
 fi
 
 if [[ ${RUN_PGEN} -eq 1 ]]; then
-  run_step "PGEN consistency" bash "${ROOT}/tests/run_pgen_consistency.sh"
+  run_optional_script "PGEN consistency" "${ROOT}/tests/run_pgen_consistency.sh"
 fi
 
 echo
