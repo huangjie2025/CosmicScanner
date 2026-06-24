@@ -132,6 +132,3 @@ bash /disk228/huangjie/PanOmics/CosmicScanner/tests/run_gwas_core_regression.sh 
 - Official PSR-GLMM/R is not integrated because source/license availability has not been confirmed from the development host.
 - Current simulations are smoke/regression scale, not publication-grade Type I error and power studies.
 - Ordinal, repeated-measure, and random-regression PSR-GWAS remain roadmap items.
-# v0.4 Follow-Up Note
-
-The v0.3 stable scope remains binary/binomial/Poisson PSR-GWAS. v0.4 builds on this by adding normal as an LMM special case, an experimental ordinal cumulative-binary MVP, official PSR-GLMM/R availability tracking, and an accuracy/speed benchmark framework. The ordinal MVP is not full PSR-GLMM/R-equivalent ordinal inference.

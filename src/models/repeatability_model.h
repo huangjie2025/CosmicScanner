@@ -9,6 +9,7 @@
 #include "bgen_reader.h"
 #include "pgen_reader.h"
 #include "lmm_engine.h"
+#include "eigen_vce.h"
 #include "design.h"
 #include "mme_builder.h"
 #include "matrix_adapter.h"
@@ -23,6 +24,14 @@ enum class RepeatabilityMode {
     STCG    ///< R3: Matrix-free STCG (Biobank-scale longitudinal)
 };
 
+/// VCE refinement mode for repeatability model
+enum class VceRefineMode {
+    Auto,              ///< Default: subject-level Woodbury REML; full-record exact only when explicitly requested
+    FullRecordExact,   ///< Force full record-level exact REML refinement
+    SubjectLevelExact, ///< Force subject-level exact REML refinement (Woodbury-based)
+    Fast               ///< Skip exact REML refinement, use EM results only
+};
+
 class RepeatabilityModel {
 public:
     struct Options {
@@ -34,11 +43,14 @@ public:
         int n_threads = 1;
         bool no_loco = false;
         bool fast_lmm = false;
+        bool eb_lmm = false;
         bool mixed_precision = false;
         bool refit_validation = false;
         int refit_limit = 0;
         std::string grm_cache_prefix;
+        std::string weight_file;
         bool use_covariate_projection = true;
+        EigenVce::NullSolver lmm_null_solver = EigenVce::NullSolver::Brent;
         int reml_maxit = 50;
         double reml_tol = 1e-6;
         double reml_vg = -1.0;
@@ -47,12 +59,16 @@ public:
         // Data source fields (migrated from GwasConfig)
         std::string pheno_file;
         int mpheno = 1;
+        int tpheno = 0;
         std::string qcovar_file;
         std::string covar_file;
         bool use_spa = false;
 
         // IASBLUP-style strategy selection
         RepeatabilityMode repeatability_mode = RepeatabilityMode::Auto;
+
+        // VCE refinement mode
+        VceRefineMode vce_refine_mode = VceRefineMode::Auto;
 
         static Options fromConfig(const GwasConfig& cfg);
     };
@@ -84,6 +100,7 @@ private:
     FixedDesignG fd_;
     std::vector<RandomComponent> components_;
     Eigen::VectorXd y_obs_;
+    Eigen::VectorXd record_weights_;
     Eigen::MatrixXf X_obs_;
     std::vector<int> obs_to_sample_;
     Eigen::MatrixXd G_subject_;
@@ -94,6 +111,10 @@ private:
 
     double v_g_ = 0.0, v_pe_ = 0.0, v_e_ = 0.0;
     int n_recs_kept_ = 0;
+    double grm_time_sec_ = 0.0;
+    double vce_time_sec_ = 0.0;
+    double scan_vbuild_time_sec_ = 0.0;
+    double scan_snp_time_sec_ = 0.0;
 
     void loadPhenotype();
     void loadCovariates();

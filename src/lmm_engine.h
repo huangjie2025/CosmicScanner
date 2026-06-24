@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <unordered_set>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <vector>
@@ -27,6 +28,15 @@ struct GwasResult {
     double p_value = std::numeric_limits<double>::quiet_NaN();
     double log10_p = 0.0;
     int n_obs = 0;
+    double eb_marker_lambda = 0.0;
+    double eb_prior_var = 0.0;
+    double eb_post_var = std::numeric_limits<double>::quiet_NaN();
+    double eb_confidence = 0.0;
+    double eb_wald = 0.0;
+    // GxE model fields (optional)
+    double beta_gxe = 0.0;
+    double se_gxe = 0.0;
+    double joint_chisq = 0.0;
 };
 
 // LMM Engine for GWAS
@@ -42,6 +52,8 @@ public:
         bool use_covariate_projection = true; // If true, project out X before Eigen Decomposition (accelerates Exact LMM)
         bool use_spa = false;   // Saddle Point Approximation for binary traits
         Eigen::VectorXd obs_weights; // Optional weights for observations (e.g., D^{-1/2} for repeatability model)
+        std::unordered_set<std::string> extract_set; // If not empty, only test these SNP IDs
+        std::unordered_set<std::string> exclude_set; // If not empty, exclude these SNP IDs
     };
 
     LmmEngine();
@@ -65,12 +77,15 @@ public:
     // keep_indices: Indices of samples to use (must match prepare's y and X)
     // chrom_filter: If not empty, only scan SNPs on this chromosome
     void scan(const PlinkReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+    void scanEB(const PlinkReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
 
     // Scan BGEN
     void scan(BgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+    void scanEB(BgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
 
     // Scan PGEN
     void scan(PgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+    void scanEB(PgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
 
     // Biobank Mode (Matrix-Free PCG)
     // Prepare with pre-computed VCs (from RHE)

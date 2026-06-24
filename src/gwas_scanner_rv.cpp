@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <map>
+#include <unordered_set>
 
 namespace cosmic {
 
@@ -28,6 +29,11 @@ void GwasScanner::runRareVariantScan(
     std::vector<VariantSet> sets = SetFileReader::read(options.set_file);
     if (sets.empty()) {
         throw std::runtime_error("No valid sets found in " + options.set_file);
+    }
+
+    std::unordered_set<std::string> target_snps;
+    for (const auto& set : sets) {
+        target_snps.insert(set.snp_ids.begin(), set.snp_ids.end());
     }
 
     // 2. Prepare Null Model (LMM)
@@ -120,14 +126,7 @@ void GwasScanner::runRareVariantScan(
         
         if (!ok) break;
         
-        // Quick check if SNP is in any set
-        bool in_set = false;
-        for (const auto& s : sets) {
-            if (std::find(s.snp_ids.begin(), s.snp_ids.end(), rsid) != s.snp_ids.end()) {
-                in_set = true; break;
-            }
-        }
-        if (!in_set) continue;
+        if (target_snps.find(rsid) == target_snps.end()) continue;
         
         Eigen::VectorXd g(n);
         double sum_g = 0.0;

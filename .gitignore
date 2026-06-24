@@ -1,6 +1,13 @@
 build/
+.dbg/
+examples/
+results/
+plink2.log
+tools/__pycache__/
 tests/__pycache__/
 tests/results/
+tests/data/
+tests/repeatability_pig_semen_realdata_20260612/
 tests/data/psr_gwas_smoke/
 tests/data/psr_normal_special_case/
 tests/data/psr_ordinal_smoke/

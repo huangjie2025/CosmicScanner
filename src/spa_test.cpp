@@ -10,13 +10,24 @@ SPATest::SPATest(const Options& opts) : options_(opts) {}
 void SPATest::set_null_model(const Eigen::VectorXd& mu, const Eigen::VectorXd& variance) {
     mu_ = mu;
     V_ = variance;
-    std::cout << "[CosmicScanner] SPATest initialized with null model. N = " << mu_.size() << std::endl;
+    valid_binary_null_ = (mu_.size() > 0 && mu_.size() == V_.size());
+    for (int i = 0; i < mu_.size() && valid_binary_null_; ++i) {
+        if (!std::isfinite(mu_(i)) || mu_(i) <= 1e-8 || mu_(i) >= 1.0 - 1e-8) valid_binary_null_ = false;
+        if (!std::isfinite(V_(i)) || V_(i) <= 0.0) valid_binary_null_ = false;
+    }
+    if (valid_binary_null_) {
+        std::cout << "[CosmicScanner] SPATest initialized with binary null model. N = " << mu_.size() << std::endl;
+    }
 }
 
 double SPATest::compute_pvalue(const Eigen::VectorXd& X, double score_stat, double score_var) {
     // Calculate normal approximation p-value first
     double z = score_stat / std::sqrt(score_var);
     double pval_norm = 2.0 * pnorm(-std::abs(z));
+
+    if (!valid_binary_null_) {
+        return pval_norm;
+    }
 
     // If the p-value is significant (e.g. < 0.05), we run SPA to correct it
     if (pval_norm > options_.pval_threshold) {

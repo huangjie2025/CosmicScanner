@@ -38,6 +38,7 @@ private:
     Options options_;
     Eigen::VectorXd mu_;
     Eigen::VectorXd V_;
+    bool valid_binary_null_ = false;
 
     // Calculate Cumulant Generating Function (K(t))
     double K(double t, const Eigen::VectorXd& X) const;

@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <Eigen/Dense>
-#include "../../Common/src/eigen_vce.h"
+#include "../libCosmicCore/src/eigen_vce.h"
 
 int main() {
     try {

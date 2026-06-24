@@ -8,6 +8,54 @@
 
 namespace cosmic {
 
+namespace {
+
+double gamma_q_rv(double a, double x) {
+    if (x < 0.0 || a <= 0.0) return 1.0;
+    if (x == 0.0) return 1.0;
+    constexpr int kMaxIter = 200;
+    constexpr double kEps = 1e-12;
+    constexpr double kTiny = 1e-300;
+
+    if (x < a + 1.0) {
+        double ap = a;
+        double sum = 1.0 / a;
+        double del = sum;
+        for (int i = 0; i < kMaxIter; ++i) {
+            ap += 1.0;
+            del *= x / ap;
+            sum += del;
+            if (std::abs(del) < std::abs(sum) * kEps) {
+                double p = sum * std::exp(-x + a * std::log(x) - std::lgamma(a));
+                return std::min(1.0, std::max(0.0, 1.0 - p));
+            }
+        }
+    } else {
+        double b = x + 1.0 - a;
+        double c = 1.0 / kTiny;
+        double d = 1.0 / std::max(b, kTiny);
+        double h = d;
+        for (int i = 1; i <= kMaxIter; ++i) {
+            double an = -i * (i - a);
+            b += 2.0;
+            d = an * d + b;
+            if (std::abs(d) < kTiny) d = kTiny;
+            c = b + an / c;
+            if (std::abs(c) < kTiny) c = kTiny;
+            d = 1.0 / d;
+            double del = d * c;
+            h *= del;
+            if (std::abs(del - 1.0) < kEps) {
+                double q = std::exp(-x + a * std::log(x) - std::lgamma(a)) * h;
+                return std::min(1.0, std::max(0.0, q));
+            }
+        }
+    }
+    return 1.0;
+}
+
+} // namespace
+
 // --- SetFileReader Implementation ---
 std::vector<VariantSet> SetFileReader::read(const std::string& filename) {
     std::vector<VariantSet> sets;
@@ -75,23 +123,8 @@ double RareVariantTest::mixtureChiSqPval(double Q, const Eigen::VectorXd& lambda
     
     double scaled_Q = Q / c;
     
-    // Incomplete Gamma Function for Chi-square CDF (upper tail)
-    // Simplified for skeleton: p-value
-    // If scaled_Q <= 0, return 1.0
     if (scaled_Q <= 0) return 1.0;
-    
-    // Using Eigen/unsupported/SpecialFunctions for accurate chi-square is better,
-    // but for skeleton, we approximate or use standard cmath gamma
-    // Since we don't want to add boost dependency, we'll use a very rough approximation or return 0
-    // A proper implementation would use boost::math::gamma_q(df/2, scaled_Q/2)
-    
-    // Placeholder: returning rough p-value
-    // Stat is ChiSq(df). Normal approximation for large df: Z = (X - df)/sqrt(2df)
-    double z = (scaled_Q - df) / std::sqrt(2.0 * df);
-    if (z <= 0) return 1.0; // Not significant
-    
-    double pval = 0.5 * std::erfc(z / std::sqrt(2.0));
-    return pval;
+    return gamma_q_rv(0.5 * df, 0.5 * scaled_Q);
 }
 
 RareVariantTest::Result RareVariantTest::runTest(const std::string& set_id, 

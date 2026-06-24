@@ -23,7 +23,8 @@ public:
     struct Options {
         int block_size = 1000;
         int cv_folds = 5;
-        std::vector<double> ridge_lambdas = {0.01, 0.1, 1.0, 10.0, 100.0};
+        std::vector<double> ridge_lambdas = {0.01, 0.25, 0.5, 0.75, 0.99};
+        int n_model_snps = 0;
         bool use_loco = true;
         int n_threads = 1;
     };
@@ -33,7 +34,7 @@ public:
 
     // Add a block of SNPs and fit Level 0 Ridge Regression
     // Returns true on success
-    bool add_block(const Eigen::MatrixXd& X_block, const Eigen::VectorXd& Y, int block_chrom);
+    bool add_block(const Eigen::Ref<const Eigen::MatrixXd>& X_block, const Eigen::VectorXd& Y, int block_chrom);
 
     // Level 1: Combine block predictions using out-of-fold predictions
     void fit_level1_stacking(const Eigen::VectorXd& Y);
@@ -46,13 +47,12 @@ private:
     
     // Internal data structures to store Level 0 predictions
     std::vector<Eigen::MatrixXd> level0_oof_preds_; // Out-of-fold predictions for each block
-    std::vector<Eigen::MatrixXd> level0_insample_preds_; // In-sample predictions for each block
     std::vector<int> block_chroms_;
     
     std::vector<Eigen::VectorXd> loco_predictions_; 
     
     // Fit ridge on a single block (computes OOF and In-sample preds for all lambdas)
-    void fit_block_ridge(const Eigen::MatrixXd& X_block, const Eigen::VectorXd& Y, Eigen::MatrixXd& oof_preds, Eigen::MatrixXd& insample_preds);
+    void fit_block_ridge(const Eigen::MatrixXd& X_block, const Eigen::VectorXd& Y, Eigen::MatrixXd& oof_preds);
 };
 
 } // namespace cosmic
