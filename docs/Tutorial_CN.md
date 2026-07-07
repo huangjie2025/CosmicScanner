@@ -1,12 +1,44 @@
-# CosmicScanner 官方教程 (Tutorial)
+# CosmicScanner 官方使用说明书 (Tutorial)
 
 **作者**: 黄杰 (Jie Huang)
-**版本**: 1.1.0
+**版本**: 1.2.0
 **GitHub**: [https://github.com/huangjie2025/CosmicScanner](https://github.com/huangjie2025/CosmicScanner)
+**更新日期**: 2026-06-24
+
+---
+
+## 目录
+
+- [1. 软件简介](#1-软件简介)
+- [2. 核心功能概览](#2-核心功能概览)
+- [3. 安装与获取](#3-安装与获取)
+- [4. 数据准备](#4-数据准备)
+- [5. 快速开始](#5-快速开始)
+- [6. 详细功能与使用示例](#6-详细功能与使用示例)
+  - [6.1 单性状 LMM GWAS](#61-单性状-lmm-gwas)
+  - [6.2 多性状联合 GWAS (Multivariate LMM)](#62-多性状联合-gwas-multivariate-lmm)
+  - [6.3 重复力模型 GWAS (Repeatability Model)](#63-重复力模型-gwas-repeatability-model)
+  - [6.4 随机回归模型 GWAS (RRM GWAS)](#64-随机回归模型-gwas-rrm-gwas)
+  - [6.5 母体效应模型 GWAS](#65-母体效应模型-gwas)
+  - [6.6 单步 ssGWAS](#66-单步-ssgwas)
+  - [6.7 阈值/Probit 模型 GWAS](#67-阈值probit-模型-gwas)
+  - [6.8 计数/二项 PSR-GWAS](#68-计数二项-psr-gwas)
+  - [6.9 序数 PSR-GWAS](#69-序数-psr-gwas)
+  - [6.10 生存 Cox 模型 GWAS](#610-生存-cox-模型-gwas)
+  - [6.11 GxE 反应范数模型 GWAS](#611-gxe-反应范数模型-gwas)
+  - [6.12 罕见变异分析 (SKAT / Burden)](#612-罕见变异分析-skat--burden)
+  - [6.13 Biobank 级别群体分析](#613-biobank-级别群体分析)
+  - [6.14 经验贝叶斯 EB-GWAS](#614-经验贝叶斯-eb-gwas)
+- [7. 输出文件格式说明](#7-输出文件格式说明)
+- [8. 完整参数说明](#8-完整参数说明)
+- [9. 性能调优指南](#9-性能调优指南)
+- [10. 常见问题 (FAQ)](#10-常见问题-faq)
+- [11. 相关文档](#11-相关文档)
 
 ---
 
 ## 1. 软件简介
+
 **CosmicScanner** 是一款专为全基因组关联分析（GWAS）打造的高性能计算工具，它是 **Cosmic** 全组学分析套件的核心组件之一。它打破了传统工具在计算速度、内存占用与模型支持上的瓶颈，能够轻松应对超大规模的群体基因型数据和复杂的表型数据。
 
 **支持平台**:
@@ -16,53 +48,162 @@
 ---
 
 ## 2. 核心功能概览
-CosmicScanner 目前支持以下核心功能：
-1. **基础单性状 LMM GWAS**: 采用精确方差组分估计与留一染色体 (LOCO) 策略，彻底解决群体分层与近端污染。
-2. **多性状联合 GWAS (Multivariate LMM)**: 直接对多个表型进行联合关联检验，提升检测效能 (Power)。
-3. **重复力模型 GWAS (Repeatability GWAS)**: 支持同一个体存在多次测量记录的长格式数据，提供记录层精确 GLS 扫描与均值聚合近似扫描。
-4. **随机回归模型 GWAS (RRM GWAS)**: 利用 Legendre 多项式对随时间或环境梯度的纵向表型进行联合轨迹关联检验。
-5. **罕见变异分析**: 集成了 SKAT、Burden 检验，并支持针对二元性状的 SPA（鞍点近似）检验。
-6. **PSR-GWAS 非正态性状分析**: 支持 binary、binomial event/trial 和 Poisson 计数性状的 PSR approximation + weighted LMM 扫描。
-7. **超大规模队列分析**: 内置 REGENIE 风格的 Ridge Regression (Biobank Mode)，应对百万级样本。
-8. **极速 GRM 构建**: 采用优化的 Bit-Parallel 算法，并支持零拷贝 `mmap` 缓存复用。
+
+CosmicScanner 当前支持以下核心功能：
+
+### GWAS 模型套件（核心模型与兼容路线）
+
+| 编号 | 模型 | 适用场景 | 关键参数 |
+|------|------|---------|---------|
+| 1 | 单性状 LMM GWAS | 标准单表型关联分析；GEMMA `-lmm` mode/refit 输出 | `--gwas` / `--lmm-gemma-mode` / `--lmm-gemma-refit` |
+| 2 | GEMMA-style LM GWAS | 无混合效应的普通线性模型；GEMMA `-lm` 对标 | `--lm --lm-mode 1\|2\|3\|4` |
+| 3 | 多性状联合 GWAS | 多表型联合检验，提升 Power | `--multivariate --mv-method` |
+| 4 | 重复力模型 GWAS | 同个体多次测量记录 | `--repeatability-model` |
+| 5 | 随机回归 RRM GWAS | 纵向/动态性状轨迹 | `--long-pheno --rrm-order` |
+| 6 | 母体效应模型 GWAS | 出生重/断奶重等母体性状 | `--maternal-model` |
+| 7 | 单步 ssGWAS | 系谱+基因组联合分析 | `--single-step --ped` |
+| 8 | 阈值/Probit 模型 GWAS | 二分类性状 | `--threshold-model --link` |
+| 9 | 计数/二项 PSR-GWAS | Poisson/Binomial 性状 | `--count-model --family` |
+| 10 | 序数 PSR-GWAS | 3+ 有序分类性状 | `--ordinal-model` |
+| 11 | 生存 Cox 模型 GWAS | 生存/时间到事件性状 | `--survival-model` |
+| 12 | GxE 反应范数模型 GWAS | 环境梯度交互 | `--gxe-model --env-covar` |
+| 13 | GEMMA-style 工具路线 | VC、summary-stat VC/CI、GRM eigen、SNP correlation、effect prediction、multi-locus 输出 | `--vc` / `--ci` / `--gs` / `--gq` / `--beta` / `--cor` / `--cat` / `--mcat` / `--wcat` / `--wsnp` / `--study` / `--ref` / `--mstudy` / `--mref` / `--gemma-eigen` / `--calccor` / `--predict-effect` / `--bslmm` |
+
+### 引擎与基础设施
+
+| 编号 | 功能 | 关键参数 |
+|------|------|---------|
+| 14 | 罕见变异分析 (SKAT/Burden/SPA) | `--skat` / `--burden` / `--spa` |
+| 14 | Biobank 两步法 (REGENIE 风格) | `--biobank-mode` |
+| 15 | IDUL/AIDUL 加速求解器 | `--lmm-null-solver` |
+| 16 | 输入适配层 MVP | `--input-file --input-model` |
+| 17 | 极速 GRM 构建 | `--make-grm --make-grm-alg` |
+| 18 | 经验贝叶斯 EB-GWAS（稳定辅助路线） | `--model lmm-eb` |
 
 ---
 
 ## 3. 安装与获取
 
-### 3.1 预编译版本 (推荐)
+### 3.1 预编译版本（推荐）
+
 您可以在 GitHub 的 Release 页面直接下载最新的预编译二进制文件，解压即用：
+
 ```bash
-# 假设下载了最新版压缩包
-tar -zxvf CosmicScanner-1.1.0-Linux-x86_64.tar.gz
+tar -zxvf CosmicScanner-1.2.0-Linux-x86_64.tar.gz
 chmod +x cosmicscanner
 ./cosmicscanner --help
 ```
 
 ### 3.2 源码编译
+
 确保系统中安装了 `CMake (>= 3.15)` 和支持 C++17 的编译器 (如 GCC 9+)：
+
 ```bash
 git clone --recurse-submodules https://github.com/huangjie2025/CosmicScanner.git
 cd CosmicScanner
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j4
 ```
+
 编译成功后，可执行文件位于 `build/cosmicscanner`。
+
+### 3.3 验证安装
+
+```bash
+./cosmicscanner --help
+```
+
+若输出完整的参数列表，说明安装成功。
 
 ---
 
 ## 4. 数据准备
 
-CosmicScanner 需要以下标准格式的数据作为输入：
-- **基因型文件**: 支持 PLINK 1.9 (`.bed/.bim/.fam`)、PLINK 2.0 (`.pgen/.pvar/.psam`) 以及 BGEN (`.bgen/.sample`) 格式。
-- **表型文件 (`--pheno`)**: 包含三列或以上的文本文件 (FID, IID, Pheno1, Pheno2...)，缺失值用 `NA` 或 `-9` 表示。对于重复力或 RRM 模型，支持包含多行的长格式数据。
-- **协变量文件 (`--covar` / `--qcovar`)**:
-  - `--covar`: 离散型协变量（如性别、批次）。
-  - `--qcovar`: 连续型协变量（如年龄、体重）。
+CosmicScanner 需要以下标准格式的数据作为输入。
 
-### 4.1 输入适配层 MVP：原始表格转 prepared input
+### 4.1 基因型文件
 
-对于重复力 GWAS，CosmicScanner 现在提供官方输入准备器。首版支持 `csv/tsv/txt`，采用显式列声明，先把真实业务表格转换为可审计的中间格式，再交给现有重复力模型。
+支持三种主流格式：
+
+| 格式 | 参数 | 文件组成 |
+|------|------|---------|
+| PLINK 1.9 | `--bfile <prefix>` | `.bed` / `.bim` / `.fam` |
+| PLINK 2.0 | `--pfile <prefix>` 或 `--pgen`/`--pvar`/`--psam` | `.pgen` / `.pvar` / `.psam` |
+| BGEN | `--bgen <file> --sample <file>` | `.bgen` / `.sample` (Oxford 格式) |
+
+**位点过滤**：
+- `--maf <float>`：最小等位基因频率过滤（默认 0.01）
+- `--hwe <float>`：HWE 精确检验 p 值过滤（默认 0.0，即关闭）
+- `--extract <file>`：仅包含指定 SNP ID 列表
+- `--exclude <file>`：排除指定 SNP ID 列表
+- `--chr <chr>`：限制扫描单条染色体
+- `--from-bp <pos>` / `--to-bp <pos>`：限制扫描区间
+
+### 4.2 表型文件
+
+**标准格式**（单性状 / 多性状）：
+
+```
+FID    IID    Pheno1    Pheno2    Pheno3
+IND001 IND001 1.23      2.45      NA
+IND002 IND002 0.88      NA        1.67
+```
+
+- 缺失值用 `NA` 或 `-9` 表示。
+- `--mpheno <n>`：指定表型列号（1-indexed），默认 1。
+- `--mpheno-list <list>`：多性状分析指定列号（如 `1,2,3`）。
+
+**长格式**（重复力 / RRM 模型）：
+
+```
+FID    IID    TIME    VALUE
+IND001 IND001 1       1.23
+IND001 IND001 2       1.35
+IND002 IND002 1       0.88
+```
+
+- `--tpheno <n>`：指定 TIME 列号。
+
+**生存性状格式**（Cox 模型）：
+
+```
+FID    IID    TIME    STATUS
+IND001 IND001 365     1
+IND002 IND002 720     0
+```
+
+- `STATUS`：1 = 事件发生，0 = 删失。
+
+**母体效应格式**：
+
+```
+FID    IID    DAM_ID    PHENO
+IND001 IND001 DAM001    1.23
+```
+
+- 第 3 列为母体 ID（可用 `--maternal-id <col>` 指定列号）。
+
+**Binomial event/trial 格式**：
+
+```
+FID    IID    EVENT    TRIAL
+IND001 IND001 45       100
+```
+
+- 通过 `--binomial-pheno <file>` 指定，不要只输入比例值。
+
+### 4.3 协变量文件
+
+| 参数 | 类型 | 格式 |
+|------|------|------|
+| `--covar <file>` | 离散型（性别、批次） | `FID IID CAT1 CAT2 ...` |
+| `--qcovar <file>` | 连续型（年龄、体重） | `FID IID VAL1 VAL2 ...` |
+
+### 4.4 输入适配层 MVP：原始表格转 prepared input
+
+对于重复力 GWAS、RRM 等长格式模型，CosmicScanner 提供官方输入准备器，将 `csv/tsv/txt` 业务表格转换为可审计的中间格式。
+
+**基本用法**：
 
 ```bash
 ./cosmicscanner \
@@ -80,26 +221,29 @@ CosmicScanner 需要以下标准格式的数据作为输入：
   --prepared-input-dir prep/semen
 ```
 
-准备目录会包含：
+**准备目录输出**：
 
-```text
-sample_manifest.tsv
-record_manifest.tsv
-pheno_long.tsv
-traits/<trait>.pheno.tsv
-covar_record_q.tsv / covar_record_c.tsv
-covar_subject_q.tsv / covar_subject_c.tsv
-model_qcovar.tsv / model_covar.tsv
-id_match_report.tsv
-input_audit.json
-summary.tsv
-trait_manifest.tsv
-covariate_audit.tsv
-subject_covar_check.tsv
-unresolved_columns.tsv
+```
+sample_manifest.tsv          # 样本清单
+record_manifest.tsv          # 记录清单
+pheno_long.tsv               # 长格式表型
+traits/<trait>.pheno.tsv     # 按性状拆分的表型
+covar_record_q.tsv           # 记录层连续协变量
+covar_record_c.tsv           # 记录层离散协变量
+covar_subject_q.tsv          # 个体层连续协变量
+covar_subject_c.tsv          # 个体层离散协变量
+model_qcovar.tsv             # 模型连续协变量
+model_covar.tsv              # 模型离散协变量
+id_match_report.tsv          # ID 匹配报告
+input_audit.json             # 输入审计日志
+summary.tsv                  # 汇总
+trait_manifest.tsv           # 性状清单
+covariate_audit.tsv          # 协变量审计
+subject_covar_check.tsv      # 个体协变量检查
+unresolved_columns.tsv       # 未解析列
 ```
 
-复用 prepared input 运行单个性状：
+**复用 prepared input 运行单个性状**：
 
 ```bash
 ./cosmicscanner \
@@ -111,47 +255,14 @@ unresolved_columns.tsv
   --out results/volume_repeatability
 ```
 
-也可以准备后直接运行，未指定 `--input-trait` 时默认使用 `--trait-cols` 的第一个性状：
+**使用配置文件**（适合正式项目复用）：
 
 ```bash
-./cosmicscanner \
-  --bfile data/genotype \
-  --input-file data/semen.csv \
-  --input-model repeatability \
-  --id-col pig_id \
-  --time-col collect_date \
-  --trait-cols volume,concentration,motility \
-  --input-trait volume \
-  --gwas \
-  --out results/volume_repeatability
-```
+# 生成模板配置
+./cosmicscanner --input-file data/semen.csv --write-template-config input_prepare.json
 
-当前 MVP 不直接读取 Excel；请先另存为 `csv/tsv`。`--time-unique-policy within-time-index` 会为同一个体同一时间的多条记录生成唯一 `TIME`，并在 `record_manifest.tsv` 中保留原始时间和组内序号。
-
-常用增强参数：
-
-- `--input-config input_prepare.json`：从配置文件读取输入适配设置，适合正式项目复用；CLI 参数优先级高于配置文件。
-- `--write-template-config input_prepare.json`：生成可编辑模板配置后退出，不需要提供基因型文件。
-- `--time-index-multiplier auto|<n>`：控制 `TIME = TIME_BASE * multiplier + WITHIN_TIME_INDEX`，默认 `auto` 会按同个体同时间最大重复数自动选择 10、100、1000 等安全倍率。
-- `--preview-schema`：只输出 `schema_preview.tsv` 并退出，用于检查列映射、ID 匹配数、重复 ID-time 键和 trait 非缺失数。
-- `--infer-columns`：输出 `column_inference.tsv` 和 `inferred_input_config.json`，基于列名、数值比例、日期比例和 genotype ID 匹配率给出 ID/TIME/trait/covariate 候选建议；当前只做建议，不自动替代显式列声明。
-- `--wide-to-long`：将 `volume_d1,day2_volume,concentration_1,concentration_T2` 这类宽表列转换为 `FID IID TIME TRAIT VALUE` 长表；此模式下 `--trait-cols` 填宽表列名，支持 `trait_1`、`trait_d1`、`day1_trait`、`trait_day1`、`trait_T1` 等形式。
-
-模型接入范围：
-
-- `--input-model repeatability`：使用 `traits/<trait>.pheno.tsv` 和 record-level covariate。
-- `--input-model rrm`：使用 `rrm/<trait>.pheno.tsv`，轨迹时间为 `TIME_BASE`，record q/c covariate 自动接入 `tcovar/tclass`。
-- `--input-model lmm`：使用 `subject/<trait>.pheno.tsv`，多记录按个体均值聚合。
-- `--input-model multivariate`：使用 `subject/multivariate.pheno.tsv`，多性状按个体均值聚合。
-
-Excel 当前策略：C++ 输入层会安全拒绝 `xlsx/xls`，请先另存为 `csv/tsv`。后续如引入 Excel，会作为可选依赖或官方转换器处理。
-
-生成模板配置：
-
-```bash
-./cosmicscanner \
-  --input-file data/semen.csv \
-  --write-template-config input_prepare.json
+# 使用配置文件准备输入
+./cosmicscanner --bfile data/genotype --input-config input_prepare.json --prepare-input-only
 ```
 
 配置文件示例：
@@ -173,87 +284,378 @@ Excel 当前策略：C++ 输入层会安全拒绝 `xlsx/xls`，请先另存为 `
 }
 ```
 
-使用配置文件准备输入：
+**模型接入范围**：
 
-```bash
-./cosmicscanner \
-  --bfile data/genotype \
-  --input-config input_prepare.json \
-  --prepare-input-only
-```
+| `--input-model` | 使用文件 | 说明 |
+|----------------|---------|------|
+| `repeatability` | `traits/<trait>.pheno.tsv` + record covariate | 记录层重复力模型 |
+| `rrm` | `rrm/<trait>.pheno.tsv` | 轨迹时间为 `TIME_BASE` |
+| `lmm` | `subject/<trait>.pheno.tsv` | 多记录按个体均值聚合 |
+| `multivariate` | `subject/multivariate.pheno.tsv` | 多性状按个体均值聚合 |
 
-只做列推断预览：
+**增强参数**：
 
-```bash
-./cosmicscanner \
-  --bfile data/genotype \
-  --input-file data/semen.csv \
-  --infer-columns \
-  --preview-schema \
-  --prepared-input-dir prep/preview
-```
+| 参数 | 说明 |
+|------|------|
+| `--preview-schema` | 只输出 `schema_preview.tsv` 并退出 |
+| `--infer-columns` | 输出列推断建议（不自动替代显式声明） |
+| `--wide-to-long` | 将宽表列（`trait_d1`, `day1_trait`）转换为长表 |
+| `--time-unique-policy strict\|within-time-index` | 同个体同时间重复记录处理策略 |
+| `--time-index-multiplier auto\|<n>` | TIME 编码倍率，`auto` 自动选择安全倍率 |
 
-输入适配专项测试：
+> **注意**：当前 MVP 不直接读取 Excel (`xlsx/xls`)，请先另存为 `csv/tsv`。
 
-```bash
-bash tests/run_test_input_adaptation.sh
-```
-
-该测试覆盖 long CSV、配置文件、列推断、增强审计、同日重复记录、strict 重复键失败、schema preview、wide-to-long；如果真实公猪精液 CSV 路径可访问，还会自动与旧 Python 脚本生成的真实数据 `summary.tsv` 做关键指标回归对齐。
-
-正式接口规范见 `docs/Input_Adaptation_Spec_CN.md`。RRM 后续复用 prepared input 的设计见 `docs/RRM_Prepared_Input_Reuse_Design_CN.md`。
+正式接口规范见 [docs/INPUT_ADAPTATION_SPEC_CN.md](INPUT_ADAPTATION_SPEC_CN.md)。
 
 ---
 
-## 5. 详细功能与使用示例
+## 5. 快速开始
 
-### 5.1 标准单性状 LMM GWAS
+以下是最基础的单性状 LMM GWAS 示例：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --mpheno 1 \
+  --covar data/my_covar.txt \
+  --gwas \
+  --out results/standard_gwas
+```
+
+输出文件 `results/standard_gwas.assoc.txt` 包含每个 SNP 的关联检验结果。
+
+---
+
+## 6. 详细功能与使用示例
+
+### 6.1 单性状 LMM GWAS
+
 利用留一染色体 (LOCO) 策略进行标准的 LMM GWAS 扫描：
-```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/my_pheno.txt   --mpheno 1   --covar data/my_covar.txt   --out results/standard_gwas
-```
-**输出文件**: `*.assoc.txt`（包含 CHR, SNP, BP, A1, A2, AF, BETA, SE, P 等列）。
 
-### 5.2 多性状联合 GWAS (Multivariate LMM)
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --mpheno 1 \
+  --covar data/my_covar.txt \
+  --qcovar data/my_qcovar.txt \
+  --gwas \
+  --out results/standard_gwas
+```
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--no-loco` | 禁用 LOCO，使用全局 null 模型 | 启用 LOCO |
+| `--fast-lmm` | 使用固定 delta 近似 LMM 加速扫描 | 关闭 |
+| `--lmm-null-solver <s>` | null 模型求解器：`brent`/`idul`/`idul_plus`/`aidul` | `brent` |
+| `--maf <f>` | 最小 MAF 过滤 | 0.01 |
+| `--hwe <f>` | HWE p 值过滤 | 0.0（关闭） |
+| `--threads <n>` | OpenMP 线程数 | 最大可用 |
+
+**输出文件**：`*.assoc.txt`
+
+### 6.2 多性状联合 GWAS (Multivariate LMM)
+
 同时分析多个表型，捕捉表型间的遗传协方差：
-```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/multi_pheno.txt   --mpheno-list 1,2,3   --multivariate   --mv-method emmv   --out results/multi_gwas
-```
-默认 `--mv-method emmv` 采用 EMmvGWAS 风格的半精准多性状 Wald 扫描：null model 通过 GRM 特征分解和 EM 估计性状协方差，扫描阶段复用 null 方差结构，并对每个 SNP 更新残差协方差后计算多自由度 Wald 检验。`--mv-method wald` 保留固定 null 方差结构的基础 Wald 路线，主要用于调试对照。`--mv-method gemma` 提供 GEMMA 风格逐 SNP 方差组分 refit Wald 路线，速度较慢，建议用于小样本精准验证或 top SNP 精修。`--mv-method gemma-full --mv-test wald,lrt,score` 输出 GEMMA-full MVP 的 Wald、LRT、Score 三类检验 p 值。
-
-`--mv-method hybrid` 是当前推荐的性能优化路线：先用 EMmvGWAS 快扫全基因组，可选对 Stage 1 top SNP 做 Score-only prepass，再将 topK、p-threshold 和 Score/Wald discrepancy 候选 SNP 的并集送入 GEMMA-full 精修。不加 `--no-loco` 时，hybrid 默认启用 LOCO-aware screening 和 per-chrom LOCO GEMMA-full refinement。
 
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/multi_pheno.txt   --mpheno-list 1,2   --multivariate   --mv-method hybrid   --mv-test wald,lrt,score   --mv-refine-top 100   --mv-refine-p 1   --mv-refine-score-prepass 500   --mv-refine-discrepancy-top 50   --mv-refine-discrepancy 1   --gwas   --out results/mv_hybrid_loco
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/multi_pheno.txt \
+  --mpheno-list 1,2,3 \
+  --multivariate \
+  --mv-method emmv \
+  --gwas \
+  --out results/multi_gwas
 ```
 
-Hybrid 输出 `*.assoc.mv.txt`、`*.refine.snplist`、`*.refined.assoc.mv.txt` 和 `*.hybrid.summary.tsv`。若启用 `--mv-refine-score-prepass`，还会输出 `*.score_prepass.refined.assoc.mv.txt`。
+**方法选择**：
 
-如果需要和 EMmvGWAS R 包进行一致性验证，可使用：
+| 方法 | 说明 | 适用场景 |
+|------|------|---------|
+| `emmv`（默认） | EMmvGWAS 风格半精准多性状 Wald | 快速全基因组扫描 |
+| `wald` | 固定 null 方差结构基础 Wald | 调试对照 |
+| `gemma` | GEMMA 风格逐 SNP refit Wald | 小样本精准验证 |
+| `gemma-full` | GEMMA-style Wald/LRT/Score，支持 `--mv-gemma-mode 1/2/3/4` | GEMMA mvLMM 常规对标 |
+| `gemma-exact` | 使用 GEMMA EM/NR 控制参数的 full alternative refit 路线 | 更接近 GEMMA exact 流程的验证 |
+| `gemma-gxe` | 多性状 SNP×环境交互 Wald | GEMMA 多性状 GxE 快速扫描 |
+| `gemma-gxe-full` | 多性状 GxE Wald/LRT/Score | GEMMA 多性状 GxE 多检验 |
+| `hybrid`（推荐） | EMmv 快扫 + GEMMA-full 精修 | 大规模全基因组 |
+| `eb` | 经验贝叶斯随机 SNP 效应 | 稳定辅助信号增强 |
+
+`gemma-exact` 是 GEMMA exact-style 路线：支持 GEMMA 的 EM/NR 迭代控制、Wald/LRT/Score mode 选择和逐 SNP full alternative refit。加 `--mv-crt` 后启用 GEMMA-style Edgeworth/PCRT 小样本校正，输出 `P_WALD_CRT`、`P_LRT_CRT`、`P_SCORE_CRT`，主 `P` 列按 `--mv-gemma-mode` 使用校正后的 p 值。该实现为 CosmicScanner/Eigen 原生矩阵实现，没有直接链接 GEMMA 的 GSL 代码。
+
+**hybrid 方法（推荐）**：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/multi_pheno.txt   --mpheno-list 1,2   --multivariate   --mv-method emmv   --mv-compatible emmvgwas   --no-loco   --out results/emmvgwas_compatible
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/multi_pheno.txt \
+  --mpheno-list 1,2 \
+  --multivariate \
+  --mv-method hybrid \
+  --mv-test wald,lrt,score \
+  --mv-refine-top 100 \
+  --mv-refine-p 1e-3 \
+  --mv-refine-score-prepass 500 \
+  --mv-refine-discrepancy-top 50 \
+  --mv-refine-discrepancy 1.0 \
+  --gwas \
+  --out results/mv_hybrid_loco
 ```
-`--mv-compatible emmvgwas` 会自动启用 EMmvGWAS-compatible GRM，即内部等价于 `--make-grm-alg 6`：使用 `Z = dosage - 1` 的 `-1/0/1` 编码，并按 `mean(diag(Z Z'))` 归一化。该模式主要用于和 EMmvGWAS R 包做方法学兼容验证，不建议作为默认 GRM 替代 VanRaden 或 GEMMA 风格 GRM。常规 GWAS 仍建议使用默认 `--make-grm-alg 1`。
 
-`--mv-method gemma-full` 默认使用 GEMMA 风格的快速路径（null 方差组分），与 GEMMA mvLMM 行为一致。对于需要更高精度的场景，可用 `--mv-refit-p` 启用逐位点方差组分 refit：
+**hybrid 输出文件**：
+- `*.assoc.mv.txt`：Stage 1 全基因组扫描结果
+- `*.refine.snplist`：精修 SNP 列表
+- `*.refined.assoc.mv.txt`：精修结果
+- `*.hybrid.summary.tsv`：hybrid 流程汇总
+- `*.score_prepass.refined.assoc.mv.txt`：Score prepass 精修结果（如启用）
+
+**GEMMA-full refit 模式**：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/multi_pheno.txt   --mpheno-list 1,2,3   --multivariate   --mv-method gemma-full   --mv-test wald,lrt,score   --mv-refit-p 0.05   --no-loco   --out results/mv_gemma_full_refit
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/multi_pheno.txt \
+  --mpheno-list 1,2,3 \
+  --multivariate \
+  --mv-method gemma-full \
+  --mv-test wald,lrt,score \
+  --mv-refit-p 0.05 \
+  --no-loco \
+  --gwas \
+  --out results/mv_gemma_full_refit
 ```
-`--mv-refit-p` 默认 `1.0` 快速路径（null 组分）；设为小于 1 时，先计算 null Score 检验指标，仅对 Score p 值不超过阈值的 SNP 执行完整 Wald/LRT refit，其余 SNP 保留 Score 输出。大规模全基因组分析优先推荐 `--mv-method hybrid`。
 
-### 5.3 重复力模型 GWAS (Repeatability Model)
+`--mv-refit-p` 默认 `1.0`（快速路径，null 组分）；设为小于 1 时，仅对 Score p ≤ 阈值的 SNP 执行完整 refit。
+
+**GEMMA 多性状 GxE 路线**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/multi_gxe_pheno.txt \
+  --mpheno-list 2,3 \
+  --multivariate \
+  --mv-method gemma-gxe-full \
+  --env-covar 1 \
+  --mv-gemma-mode 4 \
+  --no-loco \
+  --gwas \
+  --out results/mv_gemma_gxe
+```
+
+输出为 `*.assoc.mv.gxe.txt`，包含 `P_WALD_GXE`、`P_LRT_GXE`、`P_SCORE_GXE` 和各性状 `BETA_GXE_*`/`SE_GXE_*`。该路线支持 PLINK/PGEN/BGEN 输入；当前要求 `--no-loco`。
+
+**EMmvGWAS R 包兼容验证**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/multi_pheno.txt \
+  --mpheno-list 1,2 \
+  --emmvgwas \
+  --emmvgwas-output \
+  --out results/emmvgwas_compatible
+```
+
+`--emmvgwas` 是 EMmvGWAS-compatible 路线的一键别名，等价于 `--multivariate --mv-method emmv --mv-compatible emmvgwas --no-loco`。它启用 EMmvGWAS-compatible GRM（等价 `--make-grm-alg 6`：`Z=dosage-1` 编码，按 `mean(diag(Z Z'))` 归一化）。`--emmvgwas-output` 写出 EMmvGWAS 风格 `G.csv`、`R.csv`、`beta.csv` 和 association CSV。
+
+如需对接 EMmvGWAS R 包的分步流程，`--emmvgwas-vc-only` 对应 `vc_estimation`，只输出 G/R/beta 后停止；随后用 `--emmvgwas --emmvgwas-G <G.csv> --emmvgwas-R <R.csv>` 读入外部方差组分，执行 `semi_gwas` 等价扫描。直接 `--emmvgwas --emmvgwas-output` 对应 `full_gwas` 风格的一步扫描和输出。
+
+**VCE 求解器控制**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--mv-vce-solver <s>` | `em` 或 `aireml` | `em` |
+| `--mv-em-min-iter <n>` | EM 最小迭代次数 | 10 |
+| `--mv-ai-max-iter <n>` | AI-REML 最大迭代次数 | 50 |
+| `--mv-ai-tol <f>` | AI-REML 收敛阈值 | 1e-6 |
+
+### 6.3 重复力模型 GWAS (Repeatability Model)
+
 针对同一受试对象有多条测量记录的数据（长格式表型文件）：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/repeat_pheno.txt   --repeatability-model   --repeatability-grm-cache grm_cache   --out results/repeat_gwas
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/repeat_pheno.txt \
+  --repeatability-model \
+  --gwas \
+  --repeatability-grm-cache grm_cache \
+  --out results/repeat_gwas
 ```
-**说明**: `--repeatability-grm-cache` 会将个体层 GRM 缓存至磁盘并通过 `mmap` 复用，大幅加速重复扫描。
-生产分析推荐使用 `--repeatability-mode exact`，该模式保留记录层重复测量模型，并使用个体层 Woodbury 求解。`--repeatability-mode fast` 是个体均值聚合近似，只建议用于记录数平衡且不依赖记录层协变量的快速筛查。`--vce-mode auto` 默认使用可扩展的 subject-level Woodbury VCE；`--vce-mode full-record-exact` 仅建议小数据验证使用。
 
-### 5.4 PSR-GWAS 非正态性状模块
+> **重要**：所有模型（含重复力）均需显式加 `--gwas` 才会执行扫描；仅设 `--repeatability-model` 而不加 `--gwas` 时程序不会输出关联结果。
 
-PSR-GWAS 面向非正态性状的快速全基因组扫描。当前实现采用 PSR/PQL 线性化，生成 pseudo response 和 working residual variance，并通过 weighted LMM 扫描 SNP。它不是 exact GLMM；显著位点建议再用 candidate refinement 或外部 exact GLMM/GMMAT/POLMM 做复核。
+**策略选择**（`--repeatability-mode <m>`）：
 
-二元性状可以使用 probit/logit threshold 模型：
+| 策略 | 说明 | 适用场景 |
+|------|------|---------|
+| `auto` | 自动选择（记录数 > 80000 时自动切 STCG） | 默认 |
+| `exact` | 记录层精确 GLS + 个体层 Woodbury | **生产分析推荐** |
+| `fast` | 个体均值聚合近似 | 平衡数据快速筛查 |
+| `stcg` | STCG 矩阵自由求解 | Biobank 级纵向数据 |
+
+> **注意**：`refit-validation` 不是 `--repeatability-mode` 的合法取值，逐 SNP VCE refit 请使用独立参数 `--repeatability-refit-validation`。
+
+**VCE 模式**（`--vce-mode <m>`）：
+
+| 模式 | 说明 |
+|------|------|
+| `auto`（默认） | 可扩展的 subject-level Woodbury VCE |
+| `fast` | 快速 VCE，跳过精确 REML 精修 |
+| `subject-level-exact` | 强制 subject-level 精确 REML 精修 |
+| `full-record-exact` | 完整记录层精确 VCE（仅小数据验证） |
+
+**关键参数**：
+
+| 参数 | 说明 |
+|------|------|
+| `--repeatability-grm-cache <prefix>` | 将个体层 GRM 缓存至磁盘，通过 `mmap` 复用 |
+| `--repeatability-mixed-precision` | 使用 Float32 降低内存占用 |
+| `--repeatability-weight <file>` | 记录权重：`FID IID WEIGHT` 或 `FID IID TIME WEIGHT` |
+| `--repeatability-refit-validation` | 启用逐 SNP VCE refit |
+| `--repeatability-refit-limit <n>` | refit SNP 数量上限（0 = 全部） |
+
+**输出文件**：
+- `*.assoc.txt`：主关联结果
+- `*.refit.assoc.txt`：refit-validation 结果（如启用）
+- `*.stcg.assoc.txt`：STCG 策略结果（如启用）
+
+### 6.4 随机回归模型 GWAS (RRM GWAS)
+
+用于检测随时间或环境梯度变化的动态遗传效应（纵向数据）：
+
+**平衡纵向数据**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --long-pheno data/long_pheno.txt \
+  --mpheno 2 \
+  --tpheno 1 \
+  --rrm-order 2 \
+  --gwas \
+  --out results/rrm_gwas
+```
+
+**非平衡纵向数据**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/unbal_pheno.txt \
+  --rrm-unbalance \
+  --tpoint time_point \
+  --tcovar age,bw \
+  --tclass farm,parity \
+  --rrm-order 2 \
+  --rrm-basis legendre \
+  --out results/rrm_unbal_gwas
+```
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--rrm-order <n>` | 基函数阶数 (1-4) | — |
+| `--rrm-basis <m>` | 基函数：`legendre` 或 `bspline` | `legendre` |
+| `--rrm-curve-grid <n>` | 动态曲线时间网格点数 | 21 |
+| `--rrm-top <n>` | 输出 top SNP 曲线数 | 100 |
+| `--rrm-ai-iter <n>` | null AI 精修迭代数 (-1=auto, 0=fast) | -1 |
+| `--rrm-sig-threshold <p>` | 动态时间窗口 p 阈值 | 0.05 |
+| `--rrm-loco-global-null` | 使用全局 null 的快速近似 LOCO | 关闭 |
+| `--tpoint <col>` | 非平衡模式时间点列名 | — |
+| `--tcovar <cols>` | 时间依赖连续协变量 | — |
+| `--tclass <cols>` | 时间依赖离散协变量 | — |
+| `--rrm-compatible gma-fixreg` | GMA 兼容模式 | — |
+| `--rrm-compatible-varcom <file>` | GMA `.var` 文件 | — |
+
+**输出文件**：
+- `*.rrm_joint.assoc.txt`：观测层多自由度联合检验 P 值
+- `*.rrm.top_curve.txt`：Top 位点在时间轴上的重构轨迹效应
+- `*.rrm_unbal.assoc.txt`：非平衡模式结果
+
+### 6.5 母体效应模型 GWAS
+
+建模直接加性、母体加性、直接-母体协方差、母体永久环境等多组分方差结构，适用于出生重/断奶重等母体效应性状：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/birth_weight.txt \
+  --maternal-model \
+  --maternal-id 3 \
+  --covar data/covar.txt \
+  --gwas \
+  --out results/maternal_gwas
+```
+
+**表型文件格式**：
+
+```
+FID    IID    DAM_ID    PHENO
+IND001 IND001 DAM001    1.35
+IND002 IND002 DAM001    1.28
+IND003 IND003 DAM002    1.42
+```
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--maternal-model` | 开启母体效应模型 | — |
+| `--maternal-id <col>` | 母体 ID 列号 (1-indexed) | 3 |
+
+**方差组分**：直接加性 (Va)、母体加性 (Vm)、直接-母体协方差 (Cov_am)、母体永久环境 (Vpe)、残差 (Ve)。
+
+**输出文件**：`*.assoc.txt`
+
+### 6.6 单步 ssGWAS
+
+通过 H⁻¹ 矩阵联合系谱与基因组信息，支持无基因型个体的关联分析：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --single-step \
+  --ped data/pedigree.txt \
+  --genotyped-list data/genotyped_ids.txt \
+  --write-ebv \
+  --gwas \
+  --out results/ssgwas_out
+```
+
+**系谱文件格式**（`--ped`，无表头）：
+
+```
+ID       SIRE     DAM
+IND001   SIRE001  DAM001
+IND002   SIRE001  DAM002
+```
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--single-step` | 开启 ssGWAS 模型 | — |
+| `--ped <file>` | 系谱文件：`ID SIRE DAM` | — |
+| `--genotyped-list <file>` | 有基因型个体 ID 列表 | — |
+| `--write-ebv` | 输出 GEBV 估计值 | 关闭 |
+| `--h2-tau <f>` | A22 混合的 Tau 缩放 | 1.0 |
+| `--h2-omega <f>` | A22 混合的 Omega 缩放 | 1.0 |
+| `--blend-g <f>` | G 与 I 的混合权重 | 0.05 |
+
+**输出文件**：`*.assoc.txt`（+ GEBV 文件如启用 `--write-ebv`）
+
+### 6.7 阈值/Probit 模型 GWAS
+
+支持 probit/logit 链接函数的二分类性状 PQL 关联分析：
 
 ```bash
 ./cosmicscanner \
@@ -266,7 +668,21 @@ PSR-GWAS 面向非正态性状的快速全基因组扫描。当前实现采用 P
   --out results/psr_binary
 ```
 
-Poisson 计数性状支持 log-offset/exposure。`--offset` 文件为每个样本一行，顺序与 genotype sample 顺序一致，数值应为 log-offset：
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--threshold-model` | 开启二元性状 PSR/probit 模型 | — |
+| `--link probit\|logit` | 链接函数 | `probit` |
+| `--spa` | 鞍点近似检验（改善二元性状校准） | 关闭 |
+
+> **建议**：二元性状推荐加 `--spa` 改善校准。
+
+### 6.8 计数/二项 PSR-GWAS
+
+支持 Poisson、Binomial (event/trial) 性状的 PSR/PQL 近似 + weighted LMM 扫描。
+
+**Poisson 计数性状**：
 
 ```bash
 ./cosmicscanner \
@@ -280,7 +696,9 @@ Poisson 计数性状支持 log-offset/exposure。`--offset` 文件为每个样�
   --out results/psr_poisson
 ```
 
-Binomial 比例性状请使用 event/trial 两列，不要只输入比例。文件格式为 `FID IID EVENT TRIAL`：
+`--offset` 文件为每个样本一行 log-offset/exposure 值，顺序与 genotype sample 顺序一致。
+
+**Binomial 比例性状**：
 
 ```bash
 ./cosmicscanner \
@@ -292,7 +710,24 @@ Binomial 比例性状请使用 event/trial 两列，不要只输入比例。文�
   --out results/psr_binomial
 ```
 
-有序分类性状（至少 3 个有序类别）推荐使用 v0.5 stacked proportional-odds PSR 的 dense-zkz + grid-reml 路径：
+> **注意**：Binomial 请使用 event/trial 两列，不要只输入比例值。
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--count-model` | 开启计数/binomial PSR-GWAS | — |
+| `--family poisson\|binomial\|negbin` | 分布族 | `poisson` |
+| `--offset <file>` | Poisson log-offset | — |
+| `--binomial-pheno <file>` | Binomial event/trial 文件 | — |
+
+> **注意**：`--family negbin` 仍为实验入口，overdispersion 估计未完成系统验证，暂不建议作为正式结论。
+
+### 6.9 序数 PSR-GWAS
+
+支持 3+ 有序分类性状，提供两种引擎：
+
+**推荐：stacked proportional-odds PSR（dense-zkz + grid-reml）**：
 
 ```bash
 ./cosmicscanner \
@@ -306,103 +741,728 @@ Binomial 比例性状请使用 event/trial 两列，不要只输入比例。文�
   --out results/psr_ordinal
 ```
 
-默认 `.gwas.tsv` 使用修正后的 Wald / pseudo-score 主结果。需要诊断时使用 `--ordinal-test all` 写出 `.ordinal.score.tsv`；`--ordinal-test robust-score` 仅用于 cluster-robust 灵敏度分析。
-
-当前限制和建议：
-
-- `--family negbin` 仍是实验入口，overdispersion 估计尚未完成系统验证，暂不建议作为正式结论报告。
-- 官方 PSR-GLMM/R 站点当前在开发环境中访问超时，暂未接入官方源码和 demo 数据；状态记录见 `tests/PSR_GLMM_R_REFERENCE_STATUS.md`。
-- 候选位点 refit MVP 位于 `tests/psr_candidate_refine.R`，默认使用 R `glm`，并提供可选 `firth`、`glmer` 和 `glmmTMB` hook。这些可选方法分别依赖 `logistf`、`lme4` 和 `glmmTMB`；缺包时不会导致验证脚本崩溃，而是逐 SNP 输出 `converged=FALSE` 和 `error_message`。
-
-遇到难收敛或极端稀疏性状时，可以用 `--psr-maxit`、`--psr-tol`、`--psr-mu-eps`、`--psr-min-weight` 和 `--psr-max-weight` 调整 PSR/PQL 迭代与 clipping。默认值分别为 `50`、`1e-6`、`1e-6`、`1e-8` 和 `1e8`。
-
-Convergence warning 是诊断信息，不等同于程序失败。`status_class=CONVERGED_WITH_WARNING` 表示迭代达到收敛标准，但存在边界方差、quasi-likelihood 非单调或 clipping 等诊断现象；`status_class=NOT_CONVERGED` 才表示正式分析中需要谨慎处理。`WARNING_PSR_MAXIT_REACHED` 表示达到迭代上限，`WARNING_PSR_CLIPPED` 表示 `mu` 或 working weight 触及 clipping 边界，`WARNING_PSR_SIGMA_BOUNDARY` 表示最终遗传方差接近 0，`WARNING_PSR_QUASILIK_DECREASED` 表示 quasi-likelihood proxy 出现下降。
-
-PSR-GWAS smoke、R baseline 和 candidate refinement 验证：
+**基线：cumulative-binary**：
 
 ```bash
-bash tests/run_psr_gwas_validation.sh
+./cosmicscanner \
+  --bfile data/my_geno \
+  --gwas \
+  --ordinal-model \
+  --ordinal-pheno data/ordinal.pheno \
+  --ordinal-mode experimental-cumulative-binary \
+  --out results/psr_ordinal_baseline
 ```
 
-该脚本会额外生成：
+**关键参数**：
 
-- `*.psr.convergence.tsv`：PSR/PQL 迭代诊断，包括 `mu` 范围、weights 范围、clipping 次数和收敛标记。
-- `psr_convergence_summary.tsv`：每个 trait 一行的 convergence 汇总和 warning flags。
-- `weighted_lmm_equivalence.tsv`：验证 `V = Kσg² + R` 与加权变换后的 weighted LMM 在小样本固定方差组分下等价。
-- `psr_type1_summary.tsv`、`psr_power_summary.tsv`、`psr_qq_points.tsv`：由真实 CosmicScanner PSR-GWAS 运行生成的小规模 simulation smoke 摘要；正式论文验证仍需更大规模仿真和外部 GLMM/PSR-GLMM/R 基准。
-- `method_metrics.tsv`：simulation 每次运行的机器可读指标，包括 `engine=cosmicscanner_psr`、seed、trait type、scenario、runtime、convergence flag 和 `status_class`。
-- `psr_validation_report.md`：Markdown 验证报告，合并 convergence、weighted equivalence、simulation、candidate refinement 和已知限制。
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--ordinal-model` | 开启序数 PSR-GWAS | — |
+| `--ordinal-pheno <file>` | 序数表型文件 `FID IID ORDINAL` | — |
+| `--ordinal-mode <name>` | `experimental-cumulative-binary` 或 `stacked-psr` | `experimental-cumulative-binary` |
+| `--ordinal-stacked-engine <name>` | `fixed-gls` 或 `dense-zkz` | `fixed-gls` |
+| `--ordinal-vc-method <name>` | `fixed` 或 `grid-reml` | `fixed` |
+| `--ordinal-test <name>` | `wald`/`score`/`robust-score`/`all` | `wald` |
+| `--ordinal-allow-fallback` | stacked-psr 失败时回退到 cumulative-binary | 关闭 |
+| `--ordinal-sigma2-g <f>` | 固定遗传方差 | — |
+| `--ordinal-vc-grid-min <f>` | grid-reml 搜索下界 | — |
+| `--ordinal-vc-grid-max <f>` | grid-reml 搜索上界 | — |
+| `--ordinal-vc-grid-points <n>` | grid-reml 搜索点数 | — |
 
-PSR-GWAS 路线图和验收标准见 `docs/PSR_GWAS_ROADMAP.md`；v0.2 验证记录见 `docs/PSR_GWAS_V0.2_VALIDATION_SUMMARY.md`；stable sprint 总结见 `docs/PSR_GWAS_V0.3_STABLE_SUMMARY.md`。
+**输出文件**：
+- `*.gwas.tsv`：主结果（修正后的 Wald / pseudo-score）
+- `*.ordinal.score.tsv`：诊断输出（`--ordinal-test all` 时）
 
-将 PSR-GWAS 加入核心回归：
+### 6.10 生存 Cox 模型 GWAS
+
+基于 Cox 比例风险模型与鞅残差 LMM 的生存性状关联分析：
 
 ```bash
-bash tests/run_gwas_core_regression.sh --fast --with-psr
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/survival.pheno \
+  --survival-model \
+  --covar data/covar.txt \
+  --gwas \
+  --out results/survival_gwas
 ```
 
-### 5.5 随机回归模型 GWAS (RRM GWAS)
-用于检测随时间或环境梯度变化的动态遗传效应（纵向数据）：
+**表型文件格式**（`FID IID TIME STATUS`）：
+
+```
+FID    IID    TIME    STATUS
+IND001 IND001 365     1
+IND002 IND002 720     0
+IND003 IND001 180     1
+```
+
+- `TIME`：随访时间或生存时间。
+- `STATUS`：1 = 事件发生，0 = 删失。
+
+> **实现说明**：当前生存模型为简化实现——使用 Nelson-Aalen 累积危险估计鞅残差，再对残差执行 fast-LMM 扫描，并非完整 Cox PH 似然求解。适合初筛，显著位点建议用 R `coxme`/`GMMAT` 复核。
+
+**输出文件**：`*.assoc.txt`
+
+### 6.11 GxE 反应范数模型 GWAS
+
+建模随环境梯度变化的 SNP 效应（Vg0+Vg1 双方差组分），提供 2-df 联合 Wald 检验：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --long-pheno data/long_pheno.txt   --mpheno 2   --tpheno 1   --rrm-order 2   --gwas   --out results/rrm_gwas
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/gxe_pheno.txt \
+  --gxe-model \
+  --env-covar 3 \
+  --covar data/covar.txt \
+  --gwas \
+  --out results/gxe_gwas
 ```
-**输出文件**:
-- `*.rrm_joint.assoc.txt`: 观测层多自由度联合检验 P 值。
-- `*.rrm.top_curve.txt`: Top 位点在时间轴上的重构轨迹效应。
 
-### 5.6 罕见变异分析 (SKAT / Burden)
+**表型文件格式**（`FID IID ENV PHENO`）：
+
+```
+FID    IID    ENV    PHENO
+IND001 IND001 25.3   1.23
+IND002 IND002 30.1   1.45
+```
+
+- `--env-covar <col>`：环境变量在表型文件中的列号 (1-indexed)。
+
+**输出文件**：`*.gxe.assoc.txt`
+
+**输出列**：`CHR SNP BP A1 A2 FREQ N BETA_G SE_G BETA_GxE SE_GxE JOINT_CHISQ JOINT_P`
+
+### 6.12 罕见变异分析 (SKAT / Burden)
+
 基于基因或自定义集合进行罕见变异关联检验：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/my_pheno.txt   --set-file data/gene_sets.txt   --skat   --out results/skat_gwas
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --set-file data/gene_sets.txt \
+  --skat \
+  --gwas \
+  --out results/skat_gwas
 ```
 
-### 5.7 Biobank 级别群体分析
-针对数十万大样本，开启 REGENIE 模式的 Ridge Regression：
+**Burden 检验**：
+
 ```bash
-./cosmicscanner   --bfile data/my_geno   --pheno data/my_pheno.txt   --biobank-mode   --block-size 1000   --out results/biobank_gwas
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --set-file data/gene_sets.txt \
+  --burden \
+  --gwas \
+  --out results/burden_gwas
+```
+
+> **限制**：SKAT/Burden 仅在默认单性状 LMM 路径下可用，不能与 `--multivariate`、`--repeatability-model` 等其他模型标志同时使用。
+
+**集合文件格式**（`--set-file`）：
+
+```
+GENE1    rs123    rs456    rs789
+GENE2    rs234    rs567
+```
+
+**二元性状 SPA（鞍点近似）**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/binary.pheno \
+  --gwas \
+  --spa \
+  --out results/spa_gwas
+```
+
+### 6.13 Biobank 级别群体分析
+
+针对数十万大样本，开启 REGENIE 风格的 Ridge Regression 两步法：
+
+**完整两步**：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --biobank-mode \
+  --block-size 1000 \
+  --gwas \
+  --out results/biobank_gwas
+```
+
+**分步运行**：
+
+```bash
+# Step 1: 生成 LOCO 预测
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --biobank-mode \
+  --regenie-step 1 \
+  --write-pred results/loco_pred.txt \
+  --gwas \
+  --out results/biobank_step1
+
+# Step 2: 使用预测进行关联分析
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --biobank-mode \
+  --regenie-step 2 \
+  --use-pred results/loco_pred.txt \
+  --gwas \
+  --out results/biobank_step2
+```
+
+> **限制**：Biobank 模式仅在默认单性状 LMM 路径下可用，不能与其他模型标志同时使用。
+
+**关键参数**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--biobank-mode` | 开启 REGENIE 风格两步法 | — |
+| `--block-size <n>` | Ridge 分块大小 | 1000 |
+| `--regenie-model-snps <file>` | Step 1 建模 SNP 列表 | — |
+| `--write-pred <file>` | 输出 Step 1 LOCO 预测 | — |
+| `--use-pred <file>` | 使用已有 LOCO 预测 | — |
+| `--regenie-step <n>` | 0=两步, 1=仅预测, 2=仅关联 | 0 |
+
+**输出文件**：`*.biobank.assoc.txt`
+
+### 6.14 经验贝叶斯 EB-GWAS
+
+实验性 random-SNP effect 信号增强，支持单性状/重复力/多性状：
+
+```bash
+./cosmicscanner \
+  --bfile data/my_geno \
+  --pheno data/my_pheno.txt \
+  --mpheno 1 \
+  --model lmm-eb \
+  --test eb-wald \
+  --adjust eb-mbonf \
+  --gwas \
+  --out results/eb_gwas
+```
+
+**关键参数**：
+
+| 参数 | 说明 |
+|------|------|
+| `--model lmm-eb` | 开启 EB-LMM（别名 `--gwas-method eb-lmm`） |
+| `--test eb-wald` | 启用 EB Wald 检验 |
+| `--adjust eb-mbonf` | 输出 `.eb.summary.txt` 中的实验性阈值 |
+
+> **注意**：EB-GWAS 是稳定辅助路线，但正式分析请同时报告标准 LMM 结果和普通 Bonferroni/FDR。
+
+详细说明见 [docs/EB_GWAS_MODULE_CN.md](EB_GWAS_MODULE_CN.md)。
+
+---
+
+## 7. 输出文件格式说明
+
+### 7.1 标准 LMM GWAS — `*.assoc.txt`
+
+| 列名 | 说明 |
+|------|------|
+| CHR | 染色体 |
+| SNP | SNP ID |
+| BP | 物理位置 (bp) |
+| A1 | 效应等位基因 |
+| A2 | 非效应等位基因 |
+| FREQ | A1 等位基因频率 |
+| N | 样本数 |
+| BETA | 效应估计值 |
+| SE | 标准误 |
+| P | p 值 |
+| LOG10P | -log10(P) |
+
+**EB-LMM 模式额外列**：`EB_BETA`, `EB_SE`, `EB_WALD`
+
+### 7.2 多性状 GWAS — `*.assoc.mv.txt`
+
+| 列名 | 说明 |
+|------|------|
+| CHR | 染色体 |
+| SNP | SNP ID |
+| BP | 物理位置 |
+| A1 / A2 | 等位基因 |
+| FREQ | A1 频率 |
+| WALD_STAT | Wald 统计量 |
+| P | p 值 |
+
+GEMMA-full 模式额外输出 LRT、Score 列。
+
+### 7.3 RRM GWAS — `*.rrm_joint.assoc.txt`
+
+| 列名 | 说明 |
+|------|------|
+| CHR / SNP / BP / A1 / A2 | 基本信息同上 |
+| FREQ | A1 频率 |
+| N | 样本数 |
+| BETA_L0 | 基线效应 |
+| SE_L0 | 基线标准误 |
+| JOINT_CHISQ | 联合检验卡方统计量 |
+| JOINT_P | 联合检验 p 值 |
+
+### 7.4 GxE GWAS — `*.gxe.assoc.txt`
+
+| 列名 | 说明 |
+|------|------|
+| CHR / SNP / BP / A1 / A2 / FREQ / N | 基本信息同上 |
+| BETA_G | 主效应（基因型） |
+| SE_G | 主效应标准误 |
+| BETA_GxE | 交互效应 |
+| SE_GxE | 交互效应标准误 |
+| JOINT_CHISQ | 2-df 联合 Wald 卡方 |
+| JOINT_P | 联合 p 值 |
+
+### 7.5 序数 PSR-GWAS — `*.gwas.tsv`
+
+默认输出修正后的 Wald / pseudo-score 主结果。`--ordinal-test all` 时额外输出 `*.ordinal.score.tsv` 诊断文件。
+
+### 7.6 Biobank GWAS — `*.biobank.assoc.txt`
+
+列格式同标准 `*.assoc.txt`。
+
+### 7.7 EBI GWAS-SSF 格式
+
+添加 `--out-ssf` 参数可输出 EBI GWAS-SSF 标准格式。
+
+---
+
+## 8. 完整参数说明
+
+### 8.1 输入/输出
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--bfile <prefix>` | PLINK 1.9 二进制前缀 | — |
+| `--bgen <file>` | BGEN 基因型文件 | — |
+| `--sample <file>` | BGEN sample 文件 (Oxford) | — |
+| `--pfile <prefix>` | PLINK 2.0 二进制前缀 | — |
+| `--pgen <file>` / `--pvar <file>` / `--psam <file>` | PLINK 2.0 单独文件 | — |
+| `--out <prefix>` | 输出文件前缀 | `cosmic_gwas` |
+| `--out-ssf` | 输出 EBI GWAS-SSF 格式 | 关闭 |
+| `--extract <file>` | 仅包含指定 SNP | — |
+| `--exclude <file>` | 排除指定 SNP | — |
+
+### 8.2 表型/协变量
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--pheno <file>` | 表型文件 | — |
+| `--mpheno <n>` | 表型列号 (1-indexed) | 1 |
+| `--mpheno-list <list>` | 多性状列号 (如 `1,2,3`) | — |
+| `--tpheno <n>` | TIME 列号 (重复力/RRM) | — |
+| `--covar <file>` | 离散型协变量 | — |
+| `--qcovar <file>` | 连续型协变量 | — |
+| `--long-pheno <file>` | 长格式表型（开启 RRM） | — |
+| `--binomial-pheno <file>` | Binomial event/trial 文件 | — |
+| `--offset <file>` | Poisson log-offset | — |
+
+### 8.3 位点过滤
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--maf <f>` | 最小 MAF | 0.01 |
+| `--hwe <f>` | HWE p 值过滤 | 0.0（关闭） |
+| `--chr <chr>` | 限制单染色体 | — |
+| `--from-bp <pos>` | 扫描起始位置 | — |
+| `--to-bp <pos>` | 扫描结束位置 | — |
+
+### 8.4 LMM 引擎
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--gwas` | 开启 GWAS 扫描（**所有模型均需显式指定**） | 关闭 |
+| `--no-loco` | 禁用 LOCO | 启用 LOCO |
+| `--fast-lmm` | 固定 delta 近似加速 | 关闭 |
+| `--lmm-null-solver <s>` | null 求解器：`brent`/`idul`/`idul_plus`/`aidul` | `brent` |
+| `--no-covar-proj` | 禁用协变量投影 | 启用 |
+| `--force-slow` | 强制慢速路径 | 关闭 |
+| `--spa` | 鞍点近似 (二元性状) | 关闭 |
+
+> **重要**：`--gwas` 是触发扫描的必要开关。仅指定 `--repeatability-model`、`--multivariate`、`--maternal-model` 等模型标志而不加 `--gwas`，程序会正常退出但不输出关联结果。例外：`--rrm-unbalance` 会自动隐式启用 `--gwas`。
+
+### 8.5 REML / VCE 控制
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--reml-maxit <n>` | VCE 最大迭代次数 | 50 |
+| `--reml-tol <f>` | VCE 收敛阈值 | 1e-6 |
+| `--reml-vg <f>` | 固定遗传方差（跳过 VCE） | — |
+| `--reml-vpe <f>` | 固定永久环境方差 | — |
+| `--reml-ve <f>` | 固定残差方差 | — |
+
+### 8.6 多性状 GWAS
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--multivariate` | 开启多性状 GWAS | — |
+| `--mv-method <m>` | `emmv`/`wald`/`eb`/`gemma`/`gemma-full`/`hybrid` | `emmv` |
+| `--mv-compatible <name>` | 兼容模式（`emmvgwas`） | — |
+| `--mv-test <list>` | GEMMA-full 检验：`wald,lrt,score` | 全开 |
+| `--mv-refine-top <n>` | 精修 SNP 数上限 | 100 |
+| `--mv-refine-p <p>` | 精修 p 阈值 | 1e-3 |
+| `--mv-refine-score-prepass <n>` | Score prepass top n | — |
+| `--mv-refine-discrepancy-top <n>` | 差异 SNP 精修数 | — |
+| `--mv-refine-discrepancy <x>` | 最小 \|log10P 差异\| | 1.0 |
+| `--mv-refit-p <p>` | GEMMA-full refit 阈值 | 1.0 |
+| `--mv-vce-solver <s>` | `em` 或 `aireml` | `em` |
+| `--mv-em-min-iter <n>` | EM 最小迭代 | 10 |
+| `--mv-ai-max-iter <n>` | AI-REML 最大迭代 | 50 |
+| `--mv-ai-tol <f>` | AI-REML 收敛阈值 | 1e-6 |
+
+### 8.7 重复力模型
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--repeatability-model` | 开启重复力模型 | — |
+| `--repeatability-mode <m>` | `auto`/`exact`/`fast`/`stcg` | `auto` |
+| `--repeatability-grm-cache <prefix>` | GRM 磁盘缓存 | — |
+| `--repeatability-mixed-precision` | Float32 降低内存 | 关闭 |
+| `--repeatability-weight <file>` | 记录权重 | — |
+| `--repeatability-refit-validation` | 逐 SNP VCE refit | 关闭 |
+| `--repeatability-refit-limit <n>` | refit 上限 (0=全部) | 0 |
+| `--vce-mode <m>` | `auto`/`fast`/`subject-level-exact`/`full-record-exact` | `auto` |
+
+### 8.8 随机回归模型 (RRM)
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--rrm-order <n>` | 基函数阶数 (1-4) | — |
+| `--rrm-basis <m>` | `legendre` 或 `bspline` | `legendre` |
+| `--rrm-curve-grid <n>` | 曲线网格点数 | 21 |
+| `--rrm-top <n>` | top SNP 曲线数 | 100 |
+| `--rrm-ai-iter <n>` | AI 精修迭代 (-1=auto, 0=fast) | -1 |
+| `--rrm-sig-threshold <p>` | 动态时间窗口 p 阈值 | 0.05 |
+| `--rrm-unbalance` | 非平衡纵向模式 | 关闭 |
+| `--rrm-loco-global-null` | 全局 null 快速 LOCO | 关闭 |
+| `--tpoint <col>` | 非平衡模式时间列名 | — |
+| `--tcovar <cols>` | 时间依赖连续协变量 | — |
+| `--tclass <cols>` | 时间依赖离散协变量 | — |
+| `--rrm-compatible <m>` | `gma-fixreg` 兼容模式 | — |
+| `--rrm-compatible-varcom <file>` | GMA `.var` 文件 | — |
+
+### 8.9 母体效应模型
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--maternal-model` | 开启母体效应模型 | — |
+| `--maternal-id <col>` | 母体 ID 列号 (1-indexed) | 3 |
+
+### 8.10 单步 ssGWAS
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--single-step` | 开启 ssGWAS | — |
+| `--ped <file>` | 系谱文件 `ID SIRE DAM` | — |
+| `--genotyped-list <file>` | 有基因型 ID 列表 | — |
+| `--write-ebv` | 输出 GEBV | 关闭 |
+| `--h2-tau <f>` | Tau 缩放 | 1.0 |
+| `--h2-omega <f>` | Omega 缩放 | 1.0 |
+| `--blend-g <f>` | G 与 I 混合权重 | 0.05 |
+
+### 8.11 阈值/Probit 模型
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--threshold-model` | 开启二元 PSR/probit | — |
+| `--link probit\|logit` | 链接函数 | `probit` |
+
+### 8.12 计数/二项 PSR-GWAS
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--count-model` | 开启计数/binomial PSR | — |
+| `--family poisson\|binomial\|negbin` | 分布族 | `poisson` |
+| `--offset <file>` | Poisson log-offset | — |
+| `--binomial-pheno <file>` | Binomial event/trial | — |
+
+### 8.13 序数 PSR-GWAS
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--ordinal-model` | 开启序数 PSR | — |
+| `--ordinal-pheno <file>` | 序数表型文件 | — |
+| `--ordinal-mode <name>` | `experimental-cumulative-binary` / `stacked-psr` | `experimental-cumulative-binary` |
+| `--ordinal-stacked-engine <name>` | `fixed-gls` / `dense-zkz` | `fixed-gls` |
+| `--ordinal-vc-method <name>` | `fixed` / `grid-reml` | `fixed` |
+| `--ordinal-test <name>` | `wald`/`score`/`robust-score`/`all` | `wald` |
+| `--ordinal-allow-fallback` | 回退到 cumulative-binary | 关闭 |
+| `--ordinal-sigma2-g <f>` | 固定遗传方差 | — |
+| `--ordinal-vc-grid-min <f>` | grid 搜索下界 | — |
+| `--ordinal-vc-grid-max <f>` | grid 搜索上界 | — |
+| `--ordinal-vc-grid-points <n>` | grid 搜索点数 | — |
+
+### 8.14 PSR 迭代控制
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--psr-maxit <n>` | PSR/PQL 最大迭代 | 50 |
+| `--psr-tol <f>` | 收敛阈值 | 1e-6 |
+| `--psr-mu-eps <f>` | mu clipping epsilon | 1e-6 |
+| `--psr-min-weight <f>` | working weight 下界 | 1e-8 |
+| `--psr-max-weight <f>` | working weight 上界 | 1e8 |
+
+### 8.15 生存 Cox 模型
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--survival-model` | 开启 Cox 模型 | — |
+
+### 8.16 GxE 反应范数模型
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--gxe-model` | 开启 GxE 模型 | — |
+| `--env-covar <col>` | 环境变量列号 (1-indexed) | — |
+
+### 8.17 罕见变异
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--skat` | SKAT 检验 | — |
+| `--burden` | Burden 检验 | — |
+| `--set-file <file>` | 变异集合定义 | — |
+
+### 8.18 Biobank 模式
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--biobank-mode` | REGENIE 风格两步法 | — |
+| `--block-size <n>` | Ridge 分块大小 | 1000 |
+| `--regenie-model-snps <file>` | Step 1 建模 SNP | — |
+| `--write-pred <file>` | 输出 LOCO 预测 | — |
+| `--use-pred <file>` | 使用已有预测 | — |
+| `--regenie-step <n>` | 0=两步, 1=预测, 2=关联 | 0 |
+
+### 8.19 GRM 构建
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--make-grm` | 仅计算 GRM 并退出 | — |
+| `--make-grm-alg <n>` | 1=VanRaden, 2=Zeng, 3=Yang, 4=Vitezica, 5=TrueVar, 6=EMmvGWAS-compatible | 1 |
+| `--make-grm-sparse` | 稀疏 GRM | 关闭 |
+| `--sparse-cutoff <f>` | 稀疏截断值 | 0.05 |
+| `--snp-weight <file>` | SNP 权重 | — |
+| `--pop-class <file>` | 群体分层分类 | — |
+| `--force-slow` | 强制 float 慢速路径（验证用） | 关闭 |
+
+> **说明**：`--make-grm-alg 6` 仅在 `--mv-compatible emmvgwas` 时启用（由多性状模型自动设置），单独使用 `--make-grm --make-grm-alg 6` 不会触发 EMmvGWAS 编码。
+
+### 8.20 EB-GWAS
+
+| 参数 | 说明 |
+|------|------|
+| `--model lmm-eb` | 开启 EB-LMM（别名 `--gwas-method eb-lmm`） |
+| `--test eb-wald` | EB Wald 检验 |
+| `--adjust eb-mbonf` | 实验性阈值 |
+
+### 8.21 输入适配层
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--input-file <file>` | 原始 csv/tsv/txt 表格 | — |
+| `--input-config <json>` | 从 JSON 配置读取 | — |
+| `--write-template-config <json>` | 生成模板配置并退出 | — |
+| `--input-format <fmt>` | `auto`/`csv`/`tsv`/`txt` | `auto` |
+| `--input-model <model>` | `repeatability`/`rrm`/`lmm`/`multivariate` | `repeatability` |
+| `--prepared-input-dir <dir>` | prepared input 目录 | — |
+| `--prepare-input-only` | 仅准备输入并退出 | — |
+| `--id-col <name>` | ID 列名 | — |
+| `--iid-col <name>` | IID 列名（当 id-col 为 FID） | — |
+| `--time-col <name>` | 时间列名 | — |
+| `--trait-cols <list>` | 性状列名（逗号分隔） | — |
+| `--input-trait <name>` | 准备后运行的性状 | 第一个 |
+| `--record-qcovars <list>` | 记录层连续协变量 | — |
+| `--record-ccovars <list>` | 记录层离散协变量 | — |
+| `--subject-qcovars <list>` | 个体层连续协变量 | — |
+| `--subject-ccovars <list>` | 个体层离散协变量 | — |
+| `--time-parser <mode>` | `auto`/`date`/`integer`/`batch` | `auto` |
+| `--time-unique-policy <p>` | `strict`/`within-time-index` | `within-time-index` |
+| `--time-index-multiplier <n\|auto>` | TIME 编码倍率 | `auto` |
+| `--preview-schema` | 输出 schema 预览并退出 | — |
+| `--infer-columns` | 列推断建议 | — |
+| `--wide-to-long` | 宽表转长表 | — |
+
+### 8.22 工程优化
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--threads <n>` | OpenMP 线程数 | 最大可用 |
+| `--omp <n>` | `--threads` 别名 | 最大可用 |
+
+---
+
+## 9. 性能调优指南
+
+### 9.1 加速 null 模型求解
+
+```bash
+# 使用 IDUL 加速（推荐中等规模数据）
+--lmm-null-solver idul
+
+# 使用 IDUL+ 或 AIDUL（推荐大规模数据）
+--lmm-null-solver aidul
+```
+
+详见 [docs/IDUL_AIDUL_ROADMAP.md](IDUL_AIDUL_ROADMAP.md)。
+
+### 9.2 重复力模型优化
+
+```bash
+# 启用 GRM 磁盘缓存复用（大幅加速重复扫描）
+--repeatability-grm-cache grm_cache
+
+# 使用 Float32 降低内存（大规模数据）
+--repeatability-mixed-precision
+```
+
+### 9.3 多线程并行
+
+```bash
+# 指定线程数
+--threads 16
+```
+
+### 9.4 Biobank 大规模数据
+
+```bash
+# 使用 Biobank 两步法处理百万级样本
+--biobank-mode --block-size 1000
+```
+
+### 9.5 快速筛查
+
+```bash
+# 使用 fast-lmm 近似加速
+--fast-lmm
+
+# 重复力模型使用 fast 模式
+--repeatability-mode fast
 ```
 
 ---
 
-## 6. 完整参数说明
+## 10. 常见问题 (FAQ)
 
-| 参数类别 | 命令 | 说明 |
-| --- | --- | --- |
-| **输入/输出** | `--bfile <prefix>` | PLINK 1.9 二进制前缀 |
-| | `--pfile <prefix>` | PLINK 2.0 二进制前缀 |
-| | `--bgen <file>` | BGEN 格式基因型文件 |
-| | `--out <prefix>` | 输出文件前缀，默认 `cosmic_gwas` |
-| **表型/协变量** | `--pheno <file>` | 表型文件路径 |
-| | `--mpheno <n>` | 单性状分析时指定的表型列号 |
-| | `--mpheno-list <list>` | 多性状分析的表型列号 (如 1,2,3) |
-| | `--covar <file>` | 离散型协变量文件 |
-| | `--qcovar <file>` | 连续型协变量文件 |
-| **模型/算法** | `--multivariate` | 开启多性状联合 GWAS |
-| | `--mv-method <name>` | 多性状扫描方法：`emmv`、`wald`、`gemma`、`gemma-full` 或 `hybrid`，默认 `emmv` |
-| | `--mv-compatible <name>` | 多性状兼容模式；`emmvgwas` 会启用 EMmvGWAS-compatible GRM，主要用于和 EMmvGWAS R 对标 |
-| | `--mv-test <list>` | GEMMA-full 检验列表：`wald,lrt,score`，默认全开 |
-| | `--mv-refine-top <n>` | hybrid/GEMMA 精修 SNP 数量上限，默认 100 |
-| | `--mv-refine-p <p>` | hybrid/GEMMA 精修 p 值阈值，默认 1e-3 |
-| | `--mv-refit-p <p>` | GEMMA-full 快速模式的完整 refit 阈值，默认 1 表示全部 SNP refit |
-| | `--threshold-model` | 二元性状 PSR/probit 或 PSR/logit GWAS |
-| | `--link probit\|logit` | threshold 模型 link，默认 `probit` |
-| | `--count-model` | 计数/binomial PSR-GWAS 入口 |
-| | `--family poisson\|binomial\|negbin` | count 模型分布；`negbin` 仍为实验入口 |
-| | `--offset <file>` | Poisson log-offset/exposure，每个样本一行 |
-| | `--binomial-pheno <file>` | Binomial event/trial 表型文件，格式 `FID IID EVENT TRIAL` |
-| | `--psr-maxit <n>` | PSR/PQL 最大迭代次数，默认 50 |
-| | `--psr-tol <f>` | PSR/PQL 收敛阈值，默认 1e-6 |
-| | `--psr-mu-eps <f>` | PSR mean clipping epsilon，默认 1e-6 |
-| | `--psr-min-weight <f>` | PSR working weight 下界，默认 1e-8 |
-| | `--psr-max-weight <f>` | PSR working weight 上界，默认 1e8 |
-| | `--repeatability-model` | 开启重复测量/重复力模型 |
-| | `--long-pheno <file>` | 开启随机回归模型，并指定长格式表型文件 |
-| | `--rrm-order <n>` | 随机回归模型的 Legendre 多项式阶数，需要配合 `--long-pheno` |
-| | `--fast-lmm` | 开启近似 LMM 加速扫描 |
-| | `--spa` | 开启鞍点近似检验 (Saddle Point Approximation) |
-| | `--skat` / `--burden` | 开启罕见变异聚合检验 |
-| | `--biobank-mode` | 开启大规模 Ridge Regression 预处理模式 |
-| **工程优化** | `--make-grm` | 仅计算 GRM 矩阵并退出 |
-| | `--make-grm-alg 6` | EMmvGWAS-compatible GRM：`Z=dosage-1` 且按 `mean(diag(Z Z'))` 归一化，仅建议用于兼容验证 |
-| | `--repeatability-mixed-precision`| 重复力模型中使用 Float32 降低内存占用 |
-| | `--repeatability-grm-cache <pre>`| 开启 mmap 磁盘缓存复用机制 |
+### Q1: PSR-GWAS 收敛警告是什么意思？
+
+Convergence warning 是诊断信息，**不等同于程序失败**：
+
+| `status_class` | 含义 |
+|----------------|------|
+| `CONVERGED` | 正常收敛 |
+| `CONVERGED_WITH_WARNING` | 收敛但存在边界方差、quasi-likelihood 非单调或 clipping |
+| `NOT_CONVERGED` | 未收敛，正式分析需谨慎 |
+
+**Warning flags**：
+
+| Flag | 含义 |
+|------|------|
+| `WARNING_PSR_MAXIT_REACHED` | 达到迭代上限 |
+| `WARNING_PSR_CLIPPED` | mu 或 working weight 触及 clipping 边界 |
+| `WARNING_PSR_SIGMA_BOUNDARY` | 遗传方差接近 0 |
+| `WARNING_PSR_QUASILIK_DECREASED` | quasi-likelihood proxy 下降 |
+
+### Q2: 遇到难收敛或极端稀疏性状怎么办？
+
+调整 PSR/PQL 迭代与 clipping 参数：
+
+```bash
+--psr-maxit 100 \
+--psr-tol 1e-8 \
+--psr-mu-eps 1e-8 \
+--psr-min-weight 1e-10 \
+--psr-max-weight 1e10
+```
+
+### Q3: PSR-GWAS 显著位点需要复核吗？
+
+**需要**。PSR-GWAS 不是 exact GLMM，显著位点建议用 candidate refinement 或外部 exact GLMM (GMMAT/POLMM) 复核。
+
+### Q4: 如何选择多性状方法？
+
+- **大规模全基因组**：`--mv-method hybrid`（推荐）
+- **小样本精准验证**：`--mv-method gemma-full`
+- **快速扫描**：`--mv-method emmv`（默认）
+
+### Q5: 如何与 EMmvGWAS R 包对标？
+
+使用 `--mv-compatible emmvgwas --no-loco`，会启用 EMmvGWAS-compatible GRM（`--make-grm-alg 6`）。
+
+### Q6: Binomial 性状为什么不能只输入比例值？
+
+只输入比例值会丢失 trial 大小信息，导致方差估计错误。必须使用 event/trial 两列格式。
+
+### Q7: 如何输出 EBI GWAS-SSF 标准格式？
+
+添加 `--out-ssf` 参数。
+
+### Q8: 输入适配层支持 Excel 吗？
+
+当前 MVP 不支持 `xlsx/xls`，请先另存为 `csv/tsv`。
+
+### Q9: 如何只计算 GRM 不做 GWAS？
+
+```bash
+./cosmicscanner --bfile data/my_geno --make-grm --out results/grm
+```
+
+### Q10: 为什么指定了模型标志却没有输出关联结果？
+
+**必须显式加 `--gwas` 才会执行扫描**。例如以下命令不会输出结果：
+
+```bash
+# 错误：缺少 --gwas
+./cosmicscanner --bfile geno --pheno pheno.txt --repeatability-model --out out
+```
+
+正确写法：
+
+```bash
+./cosmicscanner --bfile geno --pheno pheno.txt --repeatability-model --gwas --out out
+```
+
+例外：`--rrm-unbalance` 会自动隐式启用 `--gwas`。
+
+### Q11: 如何限制只扫描一条染色体？
+
+```bash
+--chr 1
+```
+
+或限制区间：
+
+```bash
+--chr 1 --from-bp 1000000 --to-bp 2000000
+```
+
+---
+
+## 11. 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| [Tutorial_EN.md](Tutorial_EN.md) | 英文教程 |
+| [PSR_GWAS_ROADMAP.md](PSR_GWAS_ROADMAP.md) | PSR-GWAS 路线图 |
+| [PSR_GWAS_VALIDATION_REPORT_V0.5.md](PSR_GWAS_VALIDATION_REPORT_V0.5.md) | PSR-GWAS v0.5 验证报告 |
+| [PSR_GWAS_FULL_ORDINAL_DESIGN.md](PSR_GWAS_FULL_ORDINAL_DESIGN.md) | 完整序数 PSR 设计 |
+| [PSR_GWAS_BENCHMARK_GUIDE.md](PSR_GWAS_BENCHMARK_GUIDE.md) | PSR-GWAS 基准测试指南 |
+| [tutorials/PSR_GWAS_ORDINAL_TUTORIAL.md](tutorials/PSR_GWAS_ORDINAL_TUTORIAL.md) | 序数 PSR 专项教程 |
+| [REPEATABILITY_GWAS_RELEASE_CN.md](REPEATABILITY_GWAS_RELEASE_CN.md) | 重复力 GWAS 发布说明 |
+| [REPEATABILITY_GWAS_DEVELOPMENT_SUMMARY_20260529_CN.md](REPEATABILITY_GWAS_DEVELOPMENT_SUMMARY_20260529_CN.md) | 重复力 GWAS 全景开发总结 |
+| [REPEATABILITY_GWAS_MANUSCRIPT_CN.md](REPEATABILITY_GWAS_MANUSCRIPT_CN.md) | 重复力 GWAS 论文草稿 |
+| [RRM_GWAS_VALIDATION_CN.md](RRM_GWAS_VALIDATION_CN.md) | RRM 方法与验证 |
+| [RRM_GWAS_INPUT_DESIGN_CN.md](RRM_GWAS_INPUT_DESIGN_CN.md) | RRM 输入复用设计 |
+| [IDUL_AIDUL_ROADMAP.md](IDUL_AIDUL_ROADMAP.md) | IDUL/AIDUL 加速路线图 |
+| [EB_GWAS_MODULE_CN.md](EB_GWAS_MODULE_CN.md) | EB-GWAS 模块 |
+| [INPUT_ADAPTATION_SPEC_CN.md](INPUT_ADAPTATION_SPEC_CN.md) | 输入适配层规范 |
+| [models/NEW_MODELS_DESIGN.md](models/NEW_MODELS_DESIGN.md) | 新模型设计 |
+| [GWAS_RELEASE_CLOSEOUT_CN.md](GWAS_RELEASE_CLOSEOUT_CN.md) | GWAS 发布收口验收记录 |

@@ -32,6 +32,9 @@ struct MvGwasResult {
     double p_wald_gc = std::numeric_limits<double>::quiet_NaN();
     double p_lrt_gc = std::numeric_limits<double>::quiet_NaN();
     double p_score_gc = std::numeric_limits<double>::quiet_NaN();
+    double p_wald_crt = std::numeric_limits<double>::quiet_NaN();
+    double p_lrt_crt = std::numeric_limits<double>::quiet_NaN();
+    double p_score_crt = std::numeric_limits<double>::quiet_NaN();
     double eb_marker_lambda = 0.0;
     double eb_confidence = 0.0;
     Eigen::MatrixXd eb_prior_cov;

@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_set>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include "config.h"
@@ -49,6 +50,10 @@ public:
         int refit_limit = 0;
         std::string grm_cache_prefix;
         std::string weight_file;
+        std::string extract_file;
+        std::string exclude_file;
+        std::unordered_set<std::string> extract_set;
+        std::unordered_set<std::string> exclude_set;
         bool use_covariate_projection = true;
         EigenVce::NullSolver lmm_null_solver = EigenVce::NullSolver::Brent;
         int reml_maxit = 50;

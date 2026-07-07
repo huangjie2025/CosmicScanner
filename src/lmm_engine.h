@@ -27,12 +27,22 @@ struct GwasResult {
     double se = 0.0;
     double p_value = std::numeric_limits<double>::quiet_NaN();
     double log10_p = 0.0;
+    double wald_stat = std::numeric_limits<double>::quiet_NaN();
+    double lrt_stat = std::numeric_limits<double>::quiet_NaN();
+    double score_stat = std::numeric_limits<double>::quiet_NaN();
+    double p_wald = std::numeric_limits<double>::quiet_NaN();
+    double p_lrt = std::numeric_limits<double>::quiet_NaN();
+    double p_score = std::numeric_limits<double>::quiet_NaN();
     int n_obs = 0;
     double eb_marker_lambda = 0.0;
     double eb_prior_var = 0.0;
     double eb_post_var = std::numeric_limits<double>::quiet_NaN();
     double eb_confidence = 0.0;
     double eb_wald = 0.0;
+    double eb_lrt = 0.0;
+    double eb_lrt_p = 1.0;
+    double eb_sigma2 = 0.0;
+    int eb_conv = 0;
     // GxE model fields (optional)
     double beta_gxe = 0.0;
     double se_gxe = 0.0;
@@ -48,6 +58,7 @@ public:
         double min_maf = 0.01;
         double min_hwe = 0.0;   // Minimum HWE p-value filter (0.0 to disable)
         bool fast_mode = false; // If true, use fixed delta from null model
+        bool gemma_refit = false; // If true, profile alternative VCE per SNP for GEMMA LMM Wald/LRT
         bool use_residuals = false; // If true, use residuals from null model for scan (GCTA style)
         bool use_covariate_projection = true; // If true, project out X before Eigen Decomposition (accelerates Exact LMM)
         bool use_spa = false;   // Saddle Point Approximation for binary traits

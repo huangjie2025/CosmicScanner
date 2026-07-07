@@ -271,9 +271,9 @@ bash tests/run_repeatability_format_consistency.sh
 
 ## 9. 相关材料
 
-- 方法学中文稿：`docs/Repeatability_GWAS_Methods_论文稿_CN.md`
-- 全景开发总结：`docs/Repeatability_GWAS_全景开发总结_20260529.md`
-- Methods/Results 草稿：`docs/Repeatability_GWAS_Manuscript_Methods_Results_CN.md`
+- 方法学英文稿：`docs/REPEATABILITY_GWAS_MANUSCRIPT_CN.md`
+- 全景开发总结：`docs/REPEATABILITY_GWAS_DEVELOPMENT_SUMMARY_20260529_CN.md`
+- Methods/Results 草稿：`docs/REPEATABILITY_GWAS_MANUSCRIPT_CN.md`
 - Smoke test：`tests/run_test_repeatability.sh`
 - Edge cases：`tests/run_test_repeatability_edge_cases.sh`
 - Exact-vs-fast simulation：`tests/run_repeatability_exact_vs_fast_simulation.sh`

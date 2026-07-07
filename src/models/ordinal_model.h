@@ -39,6 +39,7 @@ public:
         int ordinal_vc_grid_points = 21;
         bool ordinal_allow_fallback = false;
         std::string ordinal_test = "wald";
+        bool psr_null_only = false;
         std::string pheno_file;
         std::string ordinal_file;
         std::string qcovar_file;

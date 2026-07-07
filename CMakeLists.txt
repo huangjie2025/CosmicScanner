@@ -30,6 +30,91 @@ target_include_directories(cosmicscanner PRIVATE
 
 target_link_libraries(cosmicscanner PRIVATE CosmicCommon OpenMP::OpenMP_CXX)
 
+enable_testing()
+
+add_test(
+    NAME gemma_emmvgwas_compat_smoke
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gemma_emmvgwas_compat_smoke.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(gemma_emmvgwas_compat_smoke PROPERTIES
+    ENVIRONMENT "COSMICSCANNER_ROOT=${CMAKE_CURRENT_SOURCE_DIR};COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner>;COSMIC_SMOKE_OUT=${CMAKE_CURRENT_BINARY_DIR}/test-results/gemma_emmvgwas_compat_smoke"
+    LABELS "compat;gemma;emmvgwas;smoke"
+    TIMEOUT 120
+)
+
+add_custom_target(check_gemma_compat
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -R gemma_emmvgwas_compat_smoke --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
+add_test(
+    NAME gemma_bslmm_reference_validation
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gemma_bslmm_reference_validation.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(gemma_bslmm_reference_validation PROPERTIES
+    ENVIRONMENT "COSMICSCANNER_ROOT=${CMAKE_CURRENT_SOURCE_DIR};COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner>;COSMIC_BSLMM_REF_OUT=${CMAKE_CURRENT_BINARY_DIR}/test-results/gemma_bslmm_reference_validation"
+    LABELS "reference;gemma;bslmm"
+    SKIP_RETURN_CODE 2
+    TIMEOUT 180
+)
+
+add_custom_target(check_gemma_reference
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -R gemma_bslmm_reference_validation --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
+add_test(
+    NAME gemma_multivariate_reference_validation
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gemma_multivariate_validation.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(gemma_multivariate_reference_validation PROPERTIES
+    ENVIRONMENT "COSMICSCANNER_ROOT=${CMAKE_CURRENT_SOURCE_DIR};COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner>"
+    LABELS "reference;gemma;emmvgwas;multivariate"
+    SKIP_RETURN_CODE 2
+    TIMEOUT 300
+)
+
+add_custom_target(check_gemma_mv_reference
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -R gemma_multivariate_reference_validation --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
+add_custom_target(check_gemma_all
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -L gemma --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
+add_test(
+    NAME eb_gwas_suite_quick
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_eb_gwas_suite.sh --quick
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(eb_gwas_suite_quick PROPERTIES
+    ENVIRONMENT "COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner>"
+    LABELS "eb;gwas;smoke;validation"
+    TIMEOUT 180
+)
+
+add_custom_target(check_eb_gwas
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -R eb_gwas_suite_quick --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
+add_custom_target(check_eb_gwas_full
+    COMMAND ${CMAKE_COMMAND} -E env COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner> bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_eb_gwas_suite.sh --full
+    DEPENDS cosmicscanner
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
 add_executable(test_sparse_reml tests/test_sparse_reml.cpp)
 target_link_libraries(test_sparse_reml PRIVATE CosmicCommon)
 

@@ -62,7 +62,7 @@ Benchmarks all 4 ordinal methods (cumulative-binary, fixed-gls, dense-zkz-fixed,
 ```bash
 bash tests/run_psr_v05_large_n_calibration_smoke.sh
 ```
-Tests whether stacked PSR lambda GC ≈ 0 resolves at larger N. Sweeps across N values in N_LIST. See `docs/PSR_GWAS_V0.5_LARGE_N_CALIBRATION_PLAN.md` for details.
+Tests whether stacked PSR lambda GC ≈ 0 resolves at larger N. Sweeps across N values in N_LIST. See `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md` for the calibration results.
 
 ### Cross-commit Comparison
 ```bash

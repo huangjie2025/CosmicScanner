@@ -23,7 +23,12 @@
 #include "models/ordinal_model.h"
 #include "models/survival_model.h"
 #include "models/gxe_model.h"
+#include "models/gemma_bslmm_model.h"
+#include "models/gemma_vc_model.h"
 #include "input/input_preparer.h"
+#include "gemma_calccor.h"
+#include "gemma_predictor.h"
+#include "gemma_summary_tools.h"
 #include "gwas_app.h"
 
 extern "C" {
@@ -220,8 +225,80 @@ int GwasApp::run() {
                       << " (selected trait=" << prepared.selected_trait << ")\n";
         }
 
+        int standalone_count = 0;
+        standalone_count += (cfg.make_grm || cfg.make_grm_sparse) ? 1 : 0;
+        standalone_count += cfg.gemma_s_mode > 0 ? 1 : 0;
+        standalone_count += cfg.gemma_q_mode > 0 ? 1 : 0;
+        standalone_count += cfg.gemma_eigen ? 1 : 0;
+        standalone_count += cfg.gemma_calccor ? 1 : 0;
+        standalone_count += cfg.vc_mode > 0 ? 1 : 0;
+        standalone_count += cfg.ci_mode > 0 ? 1 : 0;
+        standalone_count += !cfg.predict_effect_file.empty() ? 1 : 0;
+        standalone_count += cfg.bslmm_mode > 0 ? 1 : 0;
+        if (standalone_count > 1) {
+            throw std::runtime_error(
+                "Multiple GEMMA-compatible standalone routes detected. "
+                "Use only one of --make-grm/-gk, --gs/-gs, --gq/-gq, --gemma-eigen/-eigen, "
+                "--vc/-vc, --ci/-ci, --calccor/-calccor, --predict-effect/-epm, or --bslmm/-bslmm per run.");
+        }
+
         if (cfg.make_grm || cfg.make_grm_sparse) {
             DataLoader::runMakeGrm(cfg, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+        }
+
+        if (cfg.gemma_s_mode > 0) {
+            GemmaSummaryTools tools(cfg);
+            tools.runGs(plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+        }
+
+        if (cfg.gemma_q_mode > 0) {
+            GemmaSummaryTools tools(cfg);
+            tools.runGq();
+        }
+
+        if (cfg.gemma_eigen) {
+            DataLoader::runGemmaEigen(cfg, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+        }
+
+        if (cfg.gemma_calccor) {
+            GemmaCalccor calccor(cfg);
+            calccor.run(plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+        }
+
+        if (cfg.vc_mode > 0) {
+            if (!cfg.study_prefix.empty() || !cfg.ref_prefix.empty() ||
+                !cfg.multi_study_file.empty() || !cfg.multi_ref_file.empty()) {
+                GemmaSummaryTools tools(cfg);
+                tools.runSummaryVc();
+            } else if (!cfg.beta_file.empty() || !cfg.cor_file.empty()) {
+                GemmaSummaryTools tools(cfg);
+                tools.runBetaCorVc();
+            } else {
+                GemmaVcModel model(GemmaVcModel::Options::fromConfig(cfg));
+                model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+                model.run();
+            }
+        }
+
+        if (cfg.ci_mode > 0) {
+            GemmaSummaryTools tools(cfg);
+            tools.runSummaryCi();
+        }
+
+        if (!cfg.predict_effect_file.empty()) {
+            GemmaPredictOptions pred_opts;
+            pred_opts.effect_file = cfg.predict_effect_file;
+            pred_opts.output_file = cfg.predict_score_file.empty() ? (cfg.out_prefix + ".predict.txt") : cfg.predict_score_file;
+            pred_opts.snp_col = cfg.predict_snp_col;
+            pred_opts.effect_col = cfg.predict_effect_col;
+            GemmaPredictor predictor(pred_opts);
+            predictor.run(fids, iids, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+        }
+
+        if (cfg.bslmm_mode > 0) {
+            GemmaBslmmModel model(GemmaBslmmModel::Options::fromConfig(cfg));
+            model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
+            model.run();
         }
 
         if (cfg.run_gwas) {
@@ -239,12 +316,13 @@ int GwasApp::run() {
             model_count += cfg.ordinal_model;
             model_count += cfg.survival_model;
             model_count += cfg.gxe_model;
+            model_count += cfg.linear_model;
             if (model_count > 1) {
                 throw std::runtime_error(
                     "Multiple model flags detected. Please use only one of:\n"
                     "  --long-pheno/--rrm-order, --repeatability-model, --multivariate,\n"
                     "  --maternal-model, --single-step, --threshold-model,\n"
-                    "  --count-model, --ordinal-model, --survival-model, --gxe-model");
+                    "  --count-model, --ordinal-model, --survival-model, --gxe-model, --lm");
             }
 
             if (cfg.rrm_model) {
@@ -269,7 +347,7 @@ int GwasApp::run() {
                 model.run();
 
             } else if (cfg.single_step_model) {
-                std::cout << "--- Single-Step ssGBLUP/ssGWAS Model ---\n";
+                std::cout << "--- Single-Step GWAS (ssGWAS) Model ---\n";
                 SingleStepModel model(SingleStepModel::Options::fromConfig(cfg));
                 model.prepare(fids, iids, n_samples, plink_reader, bgen_reader, pgen_reader, is_bgen, is_pgen);
                 model.run();

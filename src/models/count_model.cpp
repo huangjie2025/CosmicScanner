@@ -37,6 +37,7 @@ CountModel::Options CountModel::Options::fromConfig(const GwasConfig& cfg) {
     opts.mu_eps = cfg.psr_mu_eps;
     opts.min_weight = cfg.psr_min_weight;
     opts.max_weight = cfg.psr_max_weight;
+    opts.psr_null_only = cfg.psr_null_only;
     opts.mpheno = cfg.mpheno;
     opts.pheno_file = cfg.pheno_file;
     opts.qcovar_file = cfg.qcovar_file;
@@ -430,6 +431,42 @@ void CountModel::writeNullSummary() const {
 
 void CountModel::run() {
     runPQL();
+    if (options_.psr_null_only) {
+        writeNullSummary();
+        std::string fname = options_.out_prefix + ".psr.null.tsv";
+        std::ofstream ofs(fname);
+        if (ofs.is_open()) {
+            ofs << "field\tvalue\n";
+            ofs << "model\tcount\n";
+            std::string fam_str = (options_.family == CountFamily::Poisson ? "poisson" :
+                                   (options_.family == CountFamily::NegativeBinomial ? "negbin" : "binomial"));
+            ofs << "family\t" << fam_str << "\n";
+            ofs << "n_samples\t" << keep_.n_keep << "\n";
+            ofs << "sigma2_g\t" << sigma2_g_ << "\n";
+            ofs << "sigma2_e\t" << sigma2_e_ << "\n";
+            double h2 = sigma2_g_ / (sigma2_g_ + sigma2_e_ + 1e-10);
+            ofs << "h2\t" << h2 << "\n";
+            ofs << "overdispersion\t" << overdispersion_ << "\n";
+            double quasi = 0.0;
+            for (int i = 0; i < keep_.n_keep; ++i) {
+                double yv = y_(keep_.keep_indices[i]);
+                if (options_.family == CountFamily::Binomial) {
+                    double t = (keep_.n_keep <= trials_.size()) ? trials_(keep_.keep_indices[i]) : 1.0;
+                    quasi += t * (yv * std::log(std::max(mu_(i), 1e-15)) + (1.0 - yv) * std::log(std::max(1.0 - mu_(i), 1e-15)));
+                } else {
+                    quasi += yv * std::log(std::max(mu_(i), 1e-15)) - mu_(i);
+                }
+            }
+            ofs << "quasi_loglik\t" << quasi << "\n";
+            ofs << "mean_mu\t" << mu_.mean() << "\n";
+            ofs << "min_mu\t" << mu_.minCoeff() << "\n";
+            ofs << "max_mu\t" << mu_.maxCoeff() << "\n";
+            ofs << "psr_null_only\tTRUE\n";
+            ofs.close();
+        }
+        std::cout << "Count null model output written to " << fname << "\n";
+        return;
+    }
     scanGwas();
     writeNullSummary();
 }

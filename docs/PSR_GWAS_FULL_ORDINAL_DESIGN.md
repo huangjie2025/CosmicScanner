@@ -2,11 +2,13 @@
 
 ## Status
 
-**Current implementation**: `stacked_psr` Stage 2B (v0.5 grid/profile REML sigma2_g update) + `experimental_cumulative_binary` (v0.4 MVP, default)
-**Stage 1** (v0.5): Fixed-VC weighted GLS first pass — `sigma2_g = 0.5` fixed, `V = I`, no random effects
-**Stage 2A** (v0.5+): Dense `ZKZ'` engine — `V = sigma2_g * K_stack + diag(1/w)`, GLS update, full Wald scan, individual BLUP output
-**Stage 2B** (v0.5+): Grid/profile REML sigma2_g estimation — `--ordinal-vc-method grid-reml`, VC update within PSR iteration, `.ordinal.vc.tsv`
-**Stage 2C** (planned): AI-REML or faster optimization, large-sample support
+**Current implementation**: `stacked_psr` Stage 2B (v0.5 grid/profile REML sigma2_g update, landed) + `experimental_cumulative_binary` (v0.4 MVP, default)
+**Stage 1** (v0.5, landed): Fixed-VC weighted GLS first pass — `sigma2_g = 0.5` fixed, `V = I`, no random effects
+**Stage 2A** (v0.5, landed): Dense `ZKZ'` engine — `V = sigma2_g * K_stack + diag(1/w)`, GLS update, full Wald scan, individual BLUP output
+**Stage 2B** (v0.5, landed): Grid/profile REML sigma2_g estimation — `--ordinal-vc-method grid-reml`, VC update within PSR iteration, `.ordinal.vc.tsv`. Wald p-value bug fixed; focused large-N calibration passed (lambda GC ~1.0 at N=200/500).
+**Stage 2C** (planned): AI-REML or faster optimization, sparse/low-rank K_stack for large N, sigma2_e estimation
+
+See `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md` for the v0.5 landing calibration results.
 
 ## Limitations of Current Experimental Cumulative-Binary
 
@@ -207,8 +209,8 @@ effects.
 ### Phase 5: Documentation (Stage 1 done)
 - [x] Update `docs/PSR_GWAS_FULL_ORDINAL_DESIGN.md` with Stage 1 implementation details.
 - [x] Update Tutorial docs with stacked-psr usage.
-- [x] Create `docs/PSR_GWAS_V0.5_STACKED_ORDINAL_SUMMARY.md` for Stage 1.
-- [ ] Update parity matrix: ordinal → stacked_psr (Stage 2).
+- [x] Stage 1/2A/2B details recorded in `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md`.
+- [x] Update parity matrix: ordinal → stacked_psr (Stage 2B).
 
 ## Risks
 
@@ -234,14 +236,14 @@ effects.
 ## Current Status (v0.5)
 
 ```
-full_ordinal_psr_status = stage2a_dense_zkz_blup
+full_ordinal_psr_status = stage2b_grid_reml
 ```
 
-Stage 1 of stacked-psr is implemented and validated (see `docs/PSR_GWAS_V0.5_STACKED_ORDINAL_SUMMARY.md`). The implementation uses fixed `sigma2_g = 0.5`, no stacked kinship `K_stack`, and a weighted GLS scan (`V = I`).
+Stage 1 of stacked-psr is implemented and validated (see `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md`). The implementation uses fixed `sigma2_g = 0.5`, no stacked kinship `K_stack`, and a weighted GLS scan (`V = I`).
 
-Stage 2A (dense `ZKZ'` BLUP first pass) is implemented and validated (see `docs/PSR_GWAS_V0.5_STAGE2A_DENSE_ZKZ_SUMMARY.md`). The dense-zkz engine (`--ordinal-stacked-engine dense-zkz`) builds the full `K_stack = Z * K * Z'`, uses `V = sigma2_g * K_stack + diag(1/w)` for GLS beta update and full Wald scan, and outputs individual-level BLUP to `.ordinal.blup.tsv`. `sigma2_g` remains fixed at 0.5; VC update (Stage 2B) is not yet implemented.
+Stage 2A (dense `ZKZ'` BLUP first pass) is implemented and validated (see `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md`). The dense-zkz engine (`--ordinal-stacked-engine dense-zkz`) builds the full `K_stack = Z * K * Z'`, uses `V = sigma2_g * K_stack + diag(1/w)` for GLS beta update and full Wald scan, and outputs individual-level BLUP to `.ordinal.blup.tsv`. `sigma2_g` remains fixed at 0.5; VC update (Stage 2B) is not yet implemented.
 
-Stage 2B (grid/profile REML sigma2_g estimation) is implemented and validated (see `docs/PSR_GWAS_V0.5_STAGE2B_VC_UPDATE_SUMMARY.md`). `--ordinal-vc-method grid-reml` performs a grid search over sigma2_g at each PSR iteration to maximize the REML log-likelihood, supporting sigma2_g = 0 boundary. `--ordinal-vc-method fixed` preserves Stage 2A/1 behavior. The experimental cumulative-binary path remains the default for ordinal GWAS.
+Stage 2B (grid/profile REML sigma2_g estimation) is implemented and validated (see `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md`). `--ordinal-vc-method grid-reml` performs a grid search over sigma2_g at each PSR iteration to maximize the REML log-likelihood, supporting sigma2_g = 0 boundary. `--ordinal-vc-method fixed` preserves Stage 2A/1 behavior. The Wald p-value bug has been fixed and focused large-N calibration passed (lambda GC ~1.0 at N=200/500).
 
 Stage 2C (AI-REML) is planned but not yet started.
 

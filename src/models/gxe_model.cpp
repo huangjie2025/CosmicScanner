@@ -128,6 +128,22 @@ void GxEModel::loadPhenotypeAndEnvironment() {
     } else {
         env_covar_ = Eigen::VectorXd::Ones(n_samples_);
     }
+
+    // Standardize environment covariate (mean 0, unit variance)
+    // This is essential for the reaction norm model: K1 = G ⊙ (ee') would
+    // otherwise be on a wildly different scale than K0 = G, causing ill-conditioned
+    // V and REML divergence. Standardization is standard practice and the 2-df
+    // joint test is invariant to linear rescaling of the environment.
+    if (options_.env_covar_col > 0 && n_samples_ > 1) {
+        double emean = env_covar_.head(n_samples_).mean();
+        double evar = (env_covar_.head(n_samples_).array() - emean).square().mean();
+        double esd = std::sqrt(evar);
+        if (esd > 1e-10) {
+            env_covar_.head(n_samples_) = (env_covar_.head(n_samples_).array() - emean) / esd;
+        }
+        std::cout << "  Environment covariate standardized (mean=0, sd=1) from raw mean="
+                  << emean << " sd=" << esd << "\n";
+    }
 }
 
 void GxEModel::loadCovariates() {
@@ -167,13 +183,31 @@ void GxEModel::runVCE() {
     sigma2_g1_ = 0.1;
     sigma2_e_ = 0.6;
 
+    // Initialize σ²_e from phenotypic variance for better starting point
+    double vy = (y_adj.array() - y_adj.mean()).square().mean();
+    sigma2_e_ = std::max(0.3, vy * 0.6);
+    sigma2_g0_ = vy * 0.2;
+    sigma2_g1_ = vy * 0.05;
+
+    double prev_logL = -std::numeric_limits<double>::infinity();
+
     for (int iter = 0; iter < options_.reml_maxit; ++iter) {
+        // Save current values for convergence check
+        double g0_prev = sigma2_g0_, g1_prev = sigma2_g1_, e_prev = sigma2_e_;
+
         Eigen::MatrixXd V = sigma2_g0_ * K0 + sigma2_g1_ * K1 + sigma2_e_ * I;
         Eigen::LDLT<Eigen::MatrixXd> ldlt(V);
+        if (ldlt.info() != Eigen::Success) {
+            // V not PD — add jitter and retry once
+            V.diagonal().array() += 1e-6 * vy;
+            ldlt.compute(V);
+            if (ldlt.info() != Eigen::Success) break;
+        }
         Eigen::MatrixXd Vinv = ldlt.solve(I);
         Eigen::MatrixXd VX = Vinv * X_mat;
         Eigen::MatrixXd XtVX = X_mat.transpose() * VX;
         Eigen::LDLT<Eigen::MatrixXd> xldlt(XtVX);
+        if (xldlt.info() != Eigen::Success) break;
         Eigen::MatrixXd VX_VXt_inv = xldlt.solve(VX.transpose());
         Eigen::MatrixXd P = Vinv - VX * VX_VXt_inv;
         Eigen::VectorXd Py = P * y_adj;
@@ -236,23 +270,45 @@ void GxEModel::runVCE() {
             delta *= 0.5;
         }
         if (!accepted) {
-            // Fall back to EM update
+            // Fall back to EM update with ratio-based step for stability
             double yPK0y = Py.dot(K0 * Py), yPK1y = Py.dot(K1 * Py), yPPy = Py.squaredNorm();
             double tr_PK0 = (P * K0).trace(), tr_PK1 = (P * K1).trace(), tr_P = P.trace();
-            sigma2_g0_ = yPK0y / (tr_PK0 + 1e-10);
-            sigma2_g1_ = yPK1y / (tr_PK1 + 1e-10);
-            sigma2_e_ = yPPy / (tr_P + 1e-10);
+            // EM ratio update: σ²_new = σ²_old · (y'PK_iPy / tr_PK_i)
+            // This is more stable than direct division when traces are near zero
+            double ratio_g0 = (tr_PK0 > 1e-8) ? (yPK0y / (tr_PK0 * sigma2_g0_ + 1e-10)) : 1.0;
+            double ratio_g1 = (tr_PK1 > 1e-8) ? (yPK1y / (tr_PK1 * sigma2_g1_ + 1e-10)) : 1.0;
+            double ratio_e  = (tr_P   > 1e-8) ? (yPPy  / (tr_P   * sigma2_e_ + 1e-10)) : 1.0;
+            // Damp the EM step to prevent oscillation
+            double damp = 0.5;
+            sigma2_g0_ *= (1.0 - damp + damp * std::max(0.0, ratio_g0));
+            sigma2_g1_ *= (1.0 - damp + damp * std::max(0.0, ratio_g1));
+            sigma2_e_  *= (1.0 - damp + damp * std::max(0.0, ratio_e));
         }
 
-        if (sigma2_g0_ < 1e-6) sigma2_g0_ = 1e-6;
-        if (sigma2_g1_ < 1e-6) sigma2_g1_ = 1e-6;
-        if (sigma2_e_ < 1e-6) sigma2_e_ = 1e-6;
+        // Boundary clamping: use small floor proportional to vy
+        double floor_vc = std::max(1e-6, 1e-4 * vy);
+        if (sigma2_g0_ < floor_vc) sigma2_g0_ = floor_vc;
+        if (sigma2_g1_ < floor_vc) sigma2_g1_ = floor_vc;
+        if (sigma2_e_  < floor_vc) sigma2_e_  = floor_vc;
 
         if (iter % 5 == 0 || iter == options_.reml_maxit - 1) {
             std::cout << "GxE iter " << iter << ": Vg0=" << sigma2_g0_
                       << " Vg1=" << sigma2_g1_ << " Ve=" << sigma2_e_ << "\n";
         }
-        if (iter > 3 && std::abs(delta.sum()) < 1e-8) break;
+
+        // Convergence: check relative change in all 3 parameters
+        double cur_logL = -0.5 * (ldlt.vectorD().array().log().sum()
+                        + xldlt.vectorD().array().log().sum()
+                        + y_adj.dot(Py));
+        if (iter > 3) {
+            double chg = std::abs(sigma2_g0_ - g0_prev) / (g0_prev + 1e-10)
+                       + std::abs(sigma2_g1_ - g1_prev) / (g1_prev + 1e-10)
+                       + std::abs(sigma2_e_  - e_prev)  / (e_prev  + 1e-10);
+            if (chg < 1e-7) break;
+            // Also break if logL hasn't improved significantly
+            if (std::abs(cur_logL - prev_logL) < 1e-6 && iter > 5) break;
+        }
+        prev_logL = cur_logL;
     }
 
     std::cout << "Final GxE VCE: Vg0=" << sigma2_g0_

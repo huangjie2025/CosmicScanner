@@ -128,13 +128,13 @@ void print_usage(const char* prog_name) {
     cout << "  --pgen <file>          PLINK 2.0 genotype file\n";
     cout << "  --pvar <file>          PLINK 2.0 variant file\n";
     cout << "  --psam <file>          PLINK 2.0 sample file\n";
-    cout << "  --out <prefix>         Output prefix (default: cosmic_gwas)\n";
+    cout << "  --out/-o <prefix>      Output prefix (default: cosmic_gwas)\n";
     cout << "  --out-ssf              Output in EBI GWAS-SSF format\n";
     cout << "  --extract <file>       File listing SNP IDs to include in analysis\n";
     cout << "  --exclude <file>       File listing SNP IDs to exclude from analysis\n";
     cout << "\n=== PHENOTYPE / COVARIATES ===\n";
-    cout << "  --pheno <file>         Phenotype file: FID IID [TIME] VALUE\n";
-    cout << "  --mpheno <n>           Phenotype column number, 1-indexed (default: 1)\n";
+    cout << "  --pheno/-p <file>      Phenotype file: FID IID [TIME] VALUE\n";
+    cout << "  --mpheno/-n <n>        Phenotype column number, 1-indexed (default: 1)\n";
     cout << "  --tpheno <n>           Time column number for repeatability/RRM\n";
     cout << "  --qcovar <file>        Quantitative covariates: FID IID VAL1 VAL2 ...\n";
     cout << "  --covar <file>         Categorical covariates: FID IID CAT1 CAT2 ...\n";
@@ -163,8 +163,14 @@ void print_usage(const char* prog_name) {
     cout << "  --wide-to-long         Treat --trait-cols as wide trait-time columns\n";
     cout << "  --maf <float>          Minor allele frequency filter (default: 0.01)\n";
     cout << "  --hwe <float>          HWE exact test p-value filter (default: 0.0, disabled)\n";
+    cout << "  --gwas                 Run GWAS scan (required to produce association output;\n";
+    cout << "                          all models need this flag explicitly, except --rrm-unbalance)\n";
     cout << "  --no-loco              Disable leave-one-chromosome-out (run global)\n";
     cout << "  --fast-lmm             Use fixed-delta approximate LMM scan\n";
+    cout << "  --lmm-gemma-mode/-lmm <n> GEMMA LMM mode: 1 Wald, 2 LRT, 3 Score, 4 all\n";
+    cout << "  --lmm-gemma-refit      Per-SNP alternative REML refit for GEMMA LMM Wald/LRT\n";
+    cout << "  --lm/-lm <n>           GEMMA-style ordinary linear model GWAS\n";
+    cout << "  --lm-mode <n>          GEMMA LM mode: 1 Wald, 2 LRT, 3 Score, 4 all\n";
     cout << "  --model lmm-eb         Empirical Bayes random-SNP LMM GWAS (experimental; report standard LMM too)\n";
     cout << "  --gwas-method eb-lmm   Alias for --model lmm-eb\n";
     cout << "  --test eb-wald         Alias enabling EB-LMM Wald test\n";
@@ -219,14 +225,30 @@ void print_usage(const char* prog_name) {
     cout << "\n--- Multivariate Model ---\n";
     cout << "  --multivariate         Requires --mpheno-list <c1,c2,...>\n";
     cout << "  --mpheno-list <list>   Comma-separated phenotype column numbers\n";
-    cout << "  --mv-method <m>        emmv, wald, eb, gemma, gemma-full, hybrid\n";
+    cout << "  --mv-method <m>        emmv, wald, eb, gemma, gemma-full, gemma-exact, gemma-gxe, gemma-gxe-full, hybrid\n";
     cout << "  --mv-test <list>       GEMMA-full tests: wald,lrt,score\n";
+    cout << "  --mv-gemma-mode <n>    GEMMA mvLMM mode: 1 Wald, 2 LRT, 3 Score, 4 all\n";
+    cout << "  --mv-pnr <p>           GEMMA mvLMM refinement threshold (default 0.001)\n";
+    cout << "  --mv-emi <n>           GEMMA exact EM iterations (default 10000)\n";
+    cout << "  --mv-nri <n>           GEMMA exact refinement iterations (default 100)\n";
+    cout << "  --mv-emp <f>           GEMMA exact EM precision (default 0.0001)\n";
+    cout << "  --mv-nrp <f>           GEMMA exact refinement precision (default 0.0001)\n";
+    cout << "  --mv-crt              GEMMA-style Edgeworth/PCRT p-value correction after refinement\n";
     cout << "  --mv-refine-discrepancy-top <n> Hybrid: add top Score/Wald discrepancy SNPs\n";
     cout << "  --mv-refine-discrepancy <x>     Hybrid: min |log10P score-wald diff| (1.0)\n";
     cout << "  --mv-refine-score-prepass <n>   Hybrid: Score-only audit top n Stage1 SNPs\n";
     cout << "  --mv-vce-solver <s>    em (default) or aireml\n";
     cout << "  --mv-em-min-iter <n>   Min EM iterations before AI-REML (10)\n";
     cout << "  --mv-ai-max-iter <n>   Max AI-REML iterations (50)\n";
+    cout << "  --mv-output-vbeta      Add upper-triangle beta covariance columns\n";
+    cout << "  --mv-emmvgwas-output   Also write EMmvGWAS-style G/R/beta/association CSV files\n";
+    cout << "  --mv-emmvgwas-G <csv>  EMmvGWAS semi_gwas mode: external G.csv from vc_estimation\n";
+    cout << "  --mv-emmvgwas-R <csv>  EMmvGWAS semi_gwas mode: external R.csv from vc_estimation\n";
+    cout << "  --emmvgwas             Alias: --multivariate --mv-method emmv --mv-compatible emmvgwas --no-loco\n";
+    cout << "  --emmvgwas-vc-only     EMmvGWAS vc_estimation route: write G/R/beta and stop before scan\n";
+    cout << "  --emmvgwas-output      Alias for --mv-emmvgwas-output\n";
+    cout << "  --emmvgwas-G/R <csv>   Aliases for EMmvGWAS semi_gwas external G/R inputs\n";
+    cout << "  --env-covar <col>      Environment column for --mv-method gemma-gxe or --gxe-model\n";
     cout << "\n--- Maternal Effects Model ---\n";
     cout << "  --maternal-model       Direct + maternal + PE multi-component model\n";
     cout << "  --pheno format: FID IID DAM_ID PHENO  (4+ columns)\n";
@@ -234,8 +256,8 @@ void print_usage(const char* prog_name) {
     cout << "  VCE: direct additive (ad), maternal additive (am),\n";
     cout << "       direct-maternal covariance (adm), PE (c), residual (e)\n";
     cout << "  Scan uses effective VCs: Vg=ad+am+(c) with LOCO GRM.\n";
-    cout << "\n--- Single-Step ssGBLUP Model ---\n";
-    cout << "  --single-step          ssGBLUP with pedigree + genomic H matrix\n";
+    cout << "\n--- Single-Step GWAS (ssGWAS) Model ---\n";
+    cout << "  --single-step          ssGWAS with pedigree + genomic H matrix\n";
     cout << "  --ped <file>           Pedigree: ID SIRE DAM (no header)\n";
     cout << "  --genotyped-list <f>   File listing genotyped individual IDs\n";
     cout << "  --write-ebv            Output GEBV estimates\n";
@@ -261,6 +283,8 @@ void print_usage(const char* prog_name) {
     cout << "  --ordinal-vc-method <name> fixed (default) or grid-reml\n";
     cout << "  --ordinal-test <name>  wald (default), score, robust-score, or all\n";
     cout << "  --ordinal-allow-fallback Fall back from stacked-psr to cumulative-binary\n";
+    cout << "  --psr-null-only        Output null model (Vg, Ve, fixed effects, BLUP, quasi-likelihood)\n";
+    cout << "                        then exit without SNP scan (available for threshold/count/ordinal)\n";
     cout << "  --psr-maxit <n>       Max PSR/PQL iterations (default: 50)\n";
     cout << "  --psr-tol <f>         PSR/PQL convergence tolerance (default: 1e-6)\n";
     cout << "  --psr-mu-eps <f>      Mu clipping epsilon for PSR (default: 1e-6)\n";
@@ -277,14 +301,53 @@ void print_usage(const char* prog_name) {
     cout << "  Scan: 2-df Wald test for beta_g + beta_gxe jointly.\n";
     cout << "  Output: BETA_G, SE_G, BETA_GxE, SE_GxE, JOINT_CHISQ, JOINT_P\n";
     cout << "\n=== INFRASTRUCTURE ===\n";
-    cout << "  --make-grm             Calculate GRM and exit\n";
-    cout << "  --make-grm-alg <n>     Method: 1=VanRaden, 3=Yang, 5=TrueVar (default: 1)\n";
+    cout << "  --make-grm/-gk <n>     Calculate GRM and exit\n";
+    cout << "  --gs/-gs <n>           GEMMA-style S matrix for summary-stat VC (mode 1)\n";
+    cout << "  --gq/-gq <n>           GEMMA-style q vector from --beta summary stats (mode 1)\n";
+    cout << "  --gemma-eigen/-eigen   Calculate GRM eigen decomposition and write eigenD/eigenU\n";
+    cout << "  --calccor/-calccor/-gw GEMMA-style SNP correlation windows; writes <out>.cor.txt\n";
+    cout << "  --windowbp <n>         BP window for --calccor (default: 1000000; 0=no BP limit)\n";
+    cout << "  --windowcm <f>         cM window for --calccor (default: 0; PLINK BIM only)\n";
+    cout << "  --windowns <n>         SNP-count window for --calccor (default: 0=no SNP-count limit)\n";
+    cout << "  --vc/-vc <n>           GEMMA-style VC estimate: 1 HE, 2 REML, 3 AI/IDUL REML\n";
+    cout << "  --ci/-ci <n>           GEMMA-style summary-stat PVE confidence interval\n";
+    cout << "  --beta/-beta <file>    Summary statistics for --gq or direct --vc with --cor\n";
+    cout << "  --cor/-cor <file>      GEMMA .cor.txt for direct summary-stat --vc with --beta\n";
+    cout << "  --cat/-cat <file>      SNP category file for summary-stat routes\n";
+    cout << "  --mcat/-mcat <file>    List of SNP category files for summary-stat routes\n";
+    cout << "  --wcat/-wcat <file>    SNP-by-category weights for summary-stat routes\n";
+    cout << "  --wsnp/-wsnp <file>    SNP weights for summary-stat routes\n";
+    cout << "  --study/-study <p>     Study prefix for summary-stat --vc (<p>.Vq/q/size.txt)\n";
+    cout << "  --ref/-ref <p>         Reference prefix for summary-stat --vc (<p>.S/size.txt)\n";
+    cout << "  --mstudy/-mstudy <f>   File listing study prefixes for summary-stat --vc/--ci\n";
+    cout << "  --mref/-mref <f>       File listing reference prefixes for summary-stat --vc/--ci\n";
+    cout << "  --make-grm-alg <n>     Method: 1=VanRaden, 2=Zeng, 3=Yang, 4=Vitezica,\n";
+    cout << "                          5=TrueVar, 6=EMmvGWAS-compatible (default: 1)\n";
+    cout << "                          Note: alg 6 is auto-set by --mv-compatible emmvgwas\n";
     cout << "  --mass-regress <file>  Multi-phenotype mass regressor (testing)\n";
     cout << "  --biobank-mode         REGENIE-style 2-step for UKB-scale data\n";
     cout << "  --regenie-model-snps <f> Model SNP list for Step 1\n";
     cout << "  --write-pred <file>    Write step 1 LOCO predictions\n";
     cout << "  --use-pred <file>      Use existing LOCO predictions\n";
     cout << "  --regenie-step <n>     0=both, 1=predictions only, 2=association only\n";
+    cout << "  --predict-effect/-epm <f> GEMMA-style prediction from SNP effect table\n";
+    cout << "  --predict-score <f>    Output prediction file (default: <out>.predict.txt)\n";
+    cout << "  --predict-snp-col <c>  SNP ID column in effect table (default: SNP/rs/id)\n";
+    cout << "  --predict-effect-col <c> Effect column (default: BETA/beta/alpha/effect)\n";
+    cout << "  --bslmm/-bslmm <n>     GEMMA-style multi-locus model: 1 BSLMM, 2 ridge/GBLUP, 3 probit, 4/5 DAP\n";
+    cout << "  --bslmm-top <n>        Sparse top-SNP count for --bslmm 1/3 approximation (default: 100)\n";
+    cout << "  --bslmm-h2 <f>         Ridge/GBLUP shrinkage h2 in (0,1), default 0.5\n";
+    cout << "  --bf/-bf <file>        DAP BF file for --bslmm 5\n";
+    cout << "  --hyp/-hyp <file>      DAP hyperparameter file for --bslmm 5\n";
+    cout << "  --bslmm-hgrid <n>      DAP h grid size for --bslmm 4 (default: 5)\n";
+    cout << "  --bslmm-rho-grid <n>   DAP rho grid size for --bslmm 4 (default: 5)\n";
+    cout << "  -hmin/-hmax <f>        GEMMA BSLMM/DAP h prior range\n";
+    cout << "  -rmin/-rmax <f>        GEMMA BSLMM/DAP rho prior range\n";
+    cout << "  -pmin/-pmax <f>        GEMMA BSLMM/DAP log10(pi) prior range\n";
+    cout << "  -gmean <f>             GEMMA BSLMM gamma-count prior mean hint\n";
+    cout << "  -hscale/-rscale/-pscale <f> GEMMA BSLMM proposal scale hints\n";
+    cout << "  -mh <n>                GEMMA BSLMM MH step-count hint\n";
+    cout << "  -smin/-smax <n>        GEMMA sparse gamma size bounds (-smax aliases --bslmm-top)\n";
     cout << "  --block-size <n>       Ridge block size (default: 1000)\n";
     cout << "  --skat                 Run SKAT rare-variant test (--set-file)\n";
     cout << "  --burden               Run Burden rare-variant test (--set-file)\n";
@@ -319,9 +382,9 @@ int main(int argc, char* argv[]) {
         else if (arg == "--pgen" && i + 1 < argc) { cfg.pgen_file = argv[++i]; }
         else if (arg == "--pvar" && i + 1 < argc) { cfg.pvar_file = argv[++i]; }
         else if (arg == "--psam" && i + 1 < argc) { cfg.psam_file = argv[++i]; }
-        else if (arg == "--out" && i + 1 < argc) { cfg.out_prefix = argv[++i]; }
+        else if ((arg == "--out" || arg == "-o") && i + 1 < argc) { cfg.out_prefix = argv[++i]; }
         else if (arg == "--out-ssf") { cfg.out_ssf = true; }
-        else if (arg == "--pheno" && i + 1 < argc) { cfg.pheno_file = argv[++i]; }
+        else if ((arg == "--pheno" || arg == "-p") && i + 1 < argc) { cfg.pheno_file = argv[++i]; }
         else if (arg == "--input-file" && i + 1 < argc) { cfg.input_file = argv[++i]; }
         else if (arg == "--input-config" && i + 1 < argc) { cfg.input_config = argv[++i]; }
         else if (arg == "--write-template-config" && i + 1 < argc) { cfg.write_template_config = argv[++i]; }
@@ -345,7 +408,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--infer-columns") { cfg.infer_columns = true; }
         else if (arg == "--wide-to-long") { cfg.wide_to_long = true; }
         else if (arg == "--long-pheno" && i + 1 < argc) { cfg.long_pheno_file = argv[++i]; cfg.rrm_model = true; }
-        else if (arg == "--mpheno" && i + 1 < argc) { cfg.mpheno = stoi(argv[++i]); }
+        else if ((arg == "--mpheno" || arg == "-n") && i + 1 < argc) { cfg.mpheno = stoi(argv[++i]); }
         else if (arg == "--tpheno" && i + 1 < argc) { cfg.tpheno = stoi(argv[++i]); cfg.tpheno_set = true; }
         else if (arg == "--rrm-order" && i + 1 < argc) { cfg.rrm_order = stoi(argv[++i]); }
         else if (arg == "--rrm-basis" && i + 1 < argc) { cfg.rrm_basis = argv[++i]; }
@@ -366,10 +429,33 @@ int main(int argc, char* argv[]) {
             string token;
             while(getline(ss, token, ',')) { cfg.mpheno_list.push_back(stoi(token)); }
         }
-        else if (arg == "--multivariate") { cfg.multivariate = true; }
+        else if (arg == "--multivariate") { cfg.multivariate = true; cfg.run_gwas = true; }
+        else if (arg == "--emmvgwas" || arg == "--emmvgwas-full-gwas" || arg == "--emmvgwas-semi-gwas") {
+            cfg.multivariate = true;
+            cfg.run_gwas = true;
+            cfg.multivariate_method = "emmv";
+            cfg.multivariate_compatible = "emmvgwas";
+            cfg.no_loco = true;
+        }
+        else if (arg == "--emmvgwas-vc-only" || arg == "--emmvgwas-vc-estimation") {
+            cfg.multivariate = true;
+            cfg.run_gwas = true;
+            cfg.multivariate_method = "emmv";
+            cfg.multivariate_compatible = "emmvgwas";
+            cfg.multivariate_emmvgwas_output = true;
+            cfg.multivariate_emmvgwas_vc_only = true;
+            cfg.no_loco = true;
+        }
         else if (arg == "--mv-method" && i + 1 < argc) { cfg.multivariate_method = argv[++i]; }
         else if (arg == "--mv-compatible" && i + 1 < argc) { cfg.multivariate_compatible = argv[++i]; }
         else if (arg == "--mv-test" && i + 1 < argc) { cfg.multivariate_tests = argv[++i]; }
+        else if (arg == "--mv-gemma-mode" && i + 1 < argc) { cfg.multivariate_gemma_mode = stoi(argv[++i]); }
+        else if (arg == "--mv-pnr" && i + 1 < argc) { cfg.multivariate_pnr = stod(argv[++i]); }
+        else if (arg == "--mv-emi" && i + 1 < argc) { cfg.multivariate_emi = stoi(argv[++i]); }
+        else if (arg == "--mv-nri" && i + 1 < argc) { cfg.multivariate_nri = stoi(argv[++i]); }
+        else if (arg == "--mv-emp" && i + 1 < argc) { cfg.multivariate_emp = stod(argv[++i]); }
+        else if (arg == "--mv-nrp" && i + 1 < argc) { cfg.multivariate_nrp = stod(argv[++i]); }
+        else if (arg == "--mv-crt") { cfg.multivariate_crt = true; }
         else if (arg == "--mv-refine-top" && i + 1 < argc) { cfg.multivariate_refine_top = stoi(argv[++i]); }
         else if (arg == "--mv-refine-p" && i + 1 < argc) { cfg.multivariate_refine_p = stod(argv[++i]); }
         else if (arg == "--mv-refine-discrepancy-top" && i + 1 < argc) { cfg.multivariate_refine_discrepancy_top = stoi(argv[++i]); }
@@ -380,23 +466,27 @@ int main(int argc, char* argv[]) {
         else if (arg == "--mv-em-min-iter" && i + 1 < argc) { cfg.multivariate_em_min_iter = stoi(argv[++i]); }
         else if (arg == "--mv-ai-max-iter" && i + 1 < argc) { cfg.multivariate_ai_max_iter = stoi(argv[++i]); }
         else if (arg == "--mv-ai-tol" && i + 1 < argc) { cfg.multivariate_ai_tol = stod(argv[++i]); }
-        else if (arg == "--repeatability-model") { cfg.repeatability_model = true; }
-        else if (arg == "--maternal-model") { cfg.maternal_model = true; }
+        else if (arg == "--mv-output-vbeta") { cfg.multivariate_output_vbeta = true; }
+        else if (arg == "--mv-emmvgwas-output" || arg == "--emmvgwas-output") { cfg.multivariate_emmvgwas_output = true; }
+        else if ((arg == "--mv-emmvgwas-G" || arg == "--emmvgwas-G") && i + 1 < argc) { cfg.multivariate_emmvgwas_G_file = argv[++i]; }
+        else if ((arg == "--mv-emmvgwas-R" || arg == "--emmvgwas-R") && i + 1 < argc) { cfg.multivariate_emmvgwas_R_file = argv[++i]; }
+        else if (arg == "--repeatability-model") { cfg.repeatability_model = true; cfg.run_gwas = true; }
+        else if (arg == "--maternal-model") { cfg.maternal_model = true; cfg.run_gwas = true; }
         else if (arg == "--maternal-id" && i + 1 < argc) { cfg.maternal_id_col = stoi(argv[++i]); }
-        else if (arg == "--single-step") { cfg.single_step_model = true; }
+        else if (arg == "--single-step") { cfg.single_step_model = true; cfg.run_gwas = true; }
         else if (arg == "--ped" && i + 1 < argc) { cfg.ped_file = argv[++i]; }
         else if (arg == "--genotyped-list" && i + 1 < argc) { cfg.genotyped_list = argv[++i]; }
         else if (arg == "--h2-tau" && i + 1 < argc) { cfg.h_tau = stod(argv[++i]); }
         else if (arg == "--h2-omega" && i + 1 < argc) { cfg.h_omega = stod(argv[++i]); }
         else if (arg == "--blend-g" && i + 1 < argc) { cfg.blend_g = stod(argv[++i]); }
         else if (arg == "--write-ebv") { cfg.write_ebv = true; }
-        else if (arg == "--threshold-model") { cfg.threshold_model = true; }
+        else if (arg == "--threshold-model") { cfg.threshold_model = true; cfg.run_gwas = true; }
         else if (arg == "--link" && i + 1 < argc) { cfg.link_type = argv[++i]; }
-        else if (arg == "--count-model") { cfg.count_model = true; }
+        else if (arg == "--count-model") { cfg.count_model = true; cfg.run_gwas = true; }
         else if (arg == "--family" && i + 1 < argc) { cfg.family_type = argv[++i]; }
         else if (arg == "--offset" && i + 1 < argc) { cfg.offset_file = argv[++i]; }
         else if (arg == "--binomial-pheno" && i + 1 < argc) { cfg.binomial_file = argv[++i]; }
-        else if (arg == "--ordinal-model") { cfg.ordinal_model = true; }
+        else if (arg == "--ordinal-model") { cfg.ordinal_model = true; cfg.run_gwas = true; }
         else if (arg == "--ordinal-pheno" && i + 1 < argc) { cfg.ordinal_file = argv[++i]; }
         else if (arg == "--ordinal-mode" && i + 1 < argc) { cfg.ordinal_mode = argv[++i]; }
         else if (arg == "--ordinal-stacked-engine" && i + 1 < argc) { cfg.ordinal_stacked_engine = argv[++i]; }
@@ -407,22 +497,80 @@ int main(int argc, char* argv[]) {
         else if (arg == "--ordinal-vc-grid-points" && i + 1 < argc) { cfg.ordinal_vc_grid_points = stoi(argv[++i]); }
         else if (arg == "--ordinal-allow-fallback") { cfg.ordinal_allow_fallback = true; }
         else if (arg == "--ordinal-test" && i + 1 < argc) { cfg.ordinal_test = argv[++i]; }
+        else if (arg == "--psr-null-only") { cfg.psr_null_only = true; }
         else if (arg == "--psr-maxit" && i + 1 < argc) { cfg.psr_maxit = stoi(argv[++i]); }
         else if (arg == "--psr-tol" && i + 1 < argc) { cfg.psr_tol = stod(argv[++i]); }
         else if (arg == "--psr-mu-eps" && i + 1 < argc) { cfg.psr_mu_eps = stod(argv[++i]); }
         else if (arg == "--psr-min-weight" && i + 1 < argc) { cfg.psr_min_weight = stod(argv[++i]); }
         else if (arg == "--psr-max-weight" && i + 1 < argc) { cfg.psr_max_weight = stod(argv[++i]); }
-        else if (arg == "--survival-model") { cfg.survival_model = true; }
-        else if (arg == "--gxe-model") { cfg.gxe_model = true; }
+        else if (arg == "--survival-model") { cfg.survival_model = true; cfg.run_gwas = true; }
+        else if (arg == "--gxe-model") { cfg.gxe_model = true; cfg.run_gwas = true; }
         else if (arg == "--env-covar" && i + 1 < argc) { cfg.env_covar_col = stoi(argv[++i]); }
         else if (arg == "--covar" && i + 1 < argc) { cfg.covar_file = argv[++i]; }
         else if (arg == "--qcovar" && i + 1 < argc) { cfg.qcovar_file = argv[++i]; }
         else if (arg == "--make-grm") { cfg.make_grm = true; }
+        else if (arg == "-gk") {
+            cfg.make_grm = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') cfg.grm_alg = stoi(argv[++i]);
+        }
+        else if (arg == "--gs" || arg == "-gs") {
+            cfg.gemma_s_mode = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') cfg.gemma_s_mode = stoi(argv[++i]);
+        }
+        else if (arg == "--gq" || arg == "-gq") {
+            cfg.gemma_q_mode = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') cfg.gemma_q_mode = stoi(argv[++i]);
+        }
+        else if (arg == "--gemma-eigen" || arg == "-eigen") { cfg.gemma_eigen = true; }
+        else if (arg == "--calccor" || arg == "--gemma-calccor" || arg == "-calccor" || arg == "-gw") {
+            cfg.gemma_calccor = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') ++i;
+        }
+        else if ((arg == "--windowbp" || arg == "-windowbp") && i + 1 < argc) { cfg.calccor_window_bp = stoll(argv[++i]); }
+        else if ((arg == "--windowcm" || arg == "-windowcm") && i + 1 < argc) { cfg.calccor_window_cm = stod(argv[++i]); }
+        else if ((arg == "--windowns" || arg == "-windowns") && i + 1 < argc) { cfg.calccor_window_ns = stoi(argv[++i]); }
+        else if ((arg == "--vc" || arg == "-vc") && i + 1 < argc) { cfg.vc_mode = stoi(argv[++i]); }
+        else if (arg == "--ci" || arg == "-ci") {
+            cfg.ci_mode = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') cfg.ci_mode = stoi(argv[++i]);
+        }
+        else if ((arg == "--beta" || arg == "-beta") && i + 1 < argc) { cfg.beta_file = argv[++i]; }
+        else if ((arg == "--cor" || arg == "-cor") && i + 1 < argc) { cfg.cor_file = argv[++i]; }
+        else if ((arg == "--cat" || arg == "-cat") && i + 1 < argc) { cfg.category_file = argv[++i]; }
+        else if ((arg == "--mcat" || arg == "-mcat") && i + 1 < argc) { cfg.multi_category_file = argv[++i]; }
+        else if ((arg == "--wcat" || arg == "-wcat") && i + 1 < argc) { cfg.category_weight_file = argv[++i]; }
+        else if ((arg == "--wsnp" || arg == "-wsnp") && i + 1 < argc) { cfg.snp_weight_summary_file = argv[++i]; }
+        else if ((arg == "--study" || arg == "-study") && i + 1 < argc) { cfg.study_prefix = argv[++i]; }
+        else if ((arg == "--ref" || arg == "-ref") && i + 1 < argc) { cfg.ref_prefix = argv[++i]; }
+        else if ((arg == "--mstudy" || arg == "-mstudy") && i + 1 < argc) { cfg.multi_study_file = argv[++i]; }
+        else if ((arg == "--mref" || arg == "-mref") && i + 1 < argc) { cfg.multi_ref_file = argv[++i]; }
+        else if ((arg == "--summary-blocks" || arg == "-nblock") && i + 1 < argc) { cfg.summary_block_count = stoi(argv[++i]); }
         else if (arg == "--make-grm-alg" && i + 1 < argc) { cfg.grm_alg = stoi(argv[++i]); }
         else if (arg == "--make-grm-sparse") { cfg.make_grm_sparse = true; }
         else if (arg == "--sparse-cutoff" && i + 1 < argc) { cfg.sparse_cutoff = stod(argv[++i]); }
         else if (arg == "--gwas") { cfg.run_gwas = true; }
         else if (arg == "--fast-lmm") { cfg.fast_lmm = true; }
+        else if ((arg == "--lmm-gemma-mode" || arg == "-lmm") && i + 1 < argc) {
+            int mode = stoi(argv[++i]);
+            if (mode == 5) {
+                cfg.vc_mode = 2;
+                cfg.run_gwas = false;
+            } else if (mode == 9) {
+                cfg.lmm_gemma_mode = 2;
+                cfg.run_gwas = true;
+            } else {
+                cfg.lmm_gemma_mode = mode;
+                cfg.run_gwas = true;
+            }
+        }
+        else if (arg == "--lmm-gemma-refit") { cfg.lmm_gemma_refit = true; cfg.run_gwas = true; if (cfg.lmm_gemma_mode == 0) cfg.lmm_gemma_mode = 4; }
+        else if (arg == "--lm") { cfg.linear_model = true; cfg.run_gwas = true; }
+        else if (arg == "-lm") {
+            cfg.linear_model = true;
+            cfg.run_gwas = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') cfg.linear_model_mode = stoi(argv[++i]);
+        }
+        else if (arg == "--lm-mode" && i + 1 < argc) { cfg.linear_model_mode = stoi(argv[++i]); }
         else if ((arg == "--model" || arg == "--gwas-method") && i + 1 < argc) {
             std::string model = argv[++i];
             if (model == "lmm" || model == "fixed-lmm") cfg.eb_lmm = false;
@@ -455,6 +603,38 @@ int main(int argc, char* argv[]) {
         else if (arg == "--write-pred" && i + 1 < argc) { cfg.regenie_write_pred = argv[++i]; }
         else if (arg == "--use-pred" && i + 1 < argc) { cfg.regenie_use_pred = argv[++i]; }
         else if (arg == "--regenie-step" && i + 1 < argc) { cfg.regenie_step = stoi(argv[++i]); }
+        else if ((arg == "--predict-effect" || arg == "-epm") && i + 1 < argc) { cfg.predict_effect_file = argv[++i]; }
+        else if (arg == "-predict") {
+            if (i + 1 < argc && argv[i + 1][0] != '-') ++i; // GEMMA mode number; CS infers prediction type from effect file.
+        }
+        else if (arg == "--predict-score" && i + 1 < argc) { cfg.predict_score_file = argv[++i]; }
+        else if (arg == "--predict-snp-col" && i + 1 < argc) { cfg.predict_snp_col = argv[++i]; }
+        else if (arg == "--predict-effect-col" && i + 1 < argc) { cfg.predict_effect_col = argv[++i]; }
+        else if ((arg == "--bslmm" || arg == "-bslmm") && i + 1 < argc) { cfg.bslmm_mode = stoi(argv[++i]); }
+        else if (arg == "--bslmm-top" && i + 1 < argc) { cfg.bslmm_top = stoi(argv[++i]); }
+        else if (arg == "--bslmm-h2" && i + 1 < argc) { cfg.bslmm_h2 = stod(argv[++i]); }
+        else if ((arg == "--bf" || arg == "-bf") && i + 1 < argc) { cfg.bslmm_bf_file = argv[++i]; }
+        else if ((arg == "--hyp" || arg == "-hyp") && i + 1 < argc) { cfg.bslmm_hyp_file = argv[++i]; }
+        else if (arg == "--bslmm-hgrid" && i + 1 < argc) { cfg.bslmm_hgrid = stoi(argv[++i]); }
+        else if (arg == "--bslmm-rho-grid" && i + 1 < argc) { cfg.bslmm_rho_grid = stoi(argv[++i]); }
+        else if (arg == "-hmin" && i + 1 < argc) { cfg.bslmm_h_min = stod(argv[++i]); }
+        else if (arg == "-hmax" && i + 1 < argc) { cfg.bslmm_h_max = stod(argv[++i]); }
+        else if (arg == "-rmin" && i + 1 < argc) { cfg.bslmm_rho_min = stod(argv[++i]); }
+        else if (arg == "-rmax" && i + 1 < argc) { cfg.bslmm_rho_max = stod(argv[++i]); }
+        else if (arg == "-pmin" && i + 1 < argc) { cfg.bslmm_p_min = stod(argv[++i]); cfg.bslmm_p_min_set = true; }
+        else if (arg == "-pmax" && i + 1 < argc) { cfg.bslmm_p_max = stod(argv[++i]); cfg.bslmm_p_max_set = true; }
+        else if (arg == "-gmean" && i + 1 < argc) { cfg.bslmm_gamma_mean = stod(argv[++i]); }
+        else if (arg == "-hscale" && i + 1 < argc) { cfg.bslmm_h_scale = stod(argv[++i]); }
+        else if (arg == "-rscale" && i + 1 < argc) { cfg.bslmm_rho_scale = stod(argv[++i]); }
+        else if (arg == "-pscale" && i + 1 < argc) { cfg.bslmm_p_scale = stod(argv[++i]); }
+        else if (arg == "-mh" && i + 1 < argc) { cfg.bslmm_mh_steps = stoi(argv[++i]); }
+        else if (arg == "-smin" && i + 1 < argc) { cfg.bslmm_s_min = stoi(argv[++i]); }
+        else if (arg == "-smax" && i + 1 < argc) { cfg.bslmm_top = stoi(argv[++i]); }
+        else if (arg == "-rpace" && i + 1 < argc) { cfg.bslmm_rpace = stoi(argv[++i]); }
+        else if (arg == "-wpace" && i + 1 < argc) { cfg.bslmm_wpace = stoi(argv[++i]); }
+        else if (arg == "-w" && i + 1 < argc) { cfg.bslmm_burnin = stoi(argv[++i]); }
+        else if (arg == "-s" && i + 1 < argc) { cfg.bslmm_sampling = stoi(argv[++i]); }
+        else if (arg == "-seed" && i + 1 < argc) { cfg.bslmm_seed = stoll(argv[++i]); }
         else if (arg == "--chr" && i + 1 < argc) { cfg.scan_chr = argv[++i]; }
         else if (arg == "--from-bp" && i + 1 < argc) { cfg.scan_from_bp = stoll(argv[++i]); }
         else if (arg == "--to-bp" && i + 1 < argc) { cfg.scan_to_bp = stoll(argv[++i]); }

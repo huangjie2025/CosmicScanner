@@ -171,15 +171,73 @@ python3 tools/plot_rrm_dynamic.py \
 - `tests/run_rrm_method_comparison.sh`：多 replicate 方法比较，默认 `N=120, M=300, TIMES=5, REPS=5`，比较 RRM fast、RRM exact、平均表型 GWAS、端点 GWAS 和多性状 GWAS 的 power、null FPR、runtime 和动态曲线 RMSE。
 - `tests/run_gma_compatible_fixreg_alignment.sh`：使用 GMA 官方 balanced case 子集，比较 GMA `balance_longwas_fixreg` 与 CosmicScanner `--rrm-compatible gma-fixreg`；默认 `N=120, M=20` 当前 `Pearson_log10P=1.0`、`Spearman_P=1.0`、最大 P 值差约 `3e-9`。
 - `tests/run_gmat_unbalanced_alignment.sh`：使用 GMAT mouse_long 非平衡数据，比较 GMAT `longwas --unbalance` 与 CosmicScanner `--rrm-unbalance`；默认要求 `Pearson_log10P >= 0.94`、`Spearman_P >= 0.93` 且 top SNP 一致。
+- `tests/run_gemma_emmvgwas_compat_smoke.sh`：本地 GEMMA/EMmvGWAS 兼容 smoke，不依赖外部 GEMMA/R；覆盖 `-lm/-lmm` GEMMA mode、EMmvGWAS `vc_estimation/full/semi` alias、summary-stat 多 category `--gs/--gq/--vc/--ci`、BSLMM/DAP 参数兼容。
 - `tests/run_gwas_core_regression.sh --with-rrm`：在 GWAS 核心回归中追加 RRM dynamic 验证；`--rrm-only` 可只运行动态 GWAS smoke 和模拟验证。
+- `tests/run_gwas_core_regression.sh --compat-smoke-only`：只运行本地 GEMMA/EMmvGWAS 兼容 smoke，适合快速验收新增兼容层。
+- `ctest --test-dir build -R gemma_emmvgwas_compat_smoke --output-on-failure`：同一兼容 smoke 的 CTest 入口，输出 manifest 位于 `build/test-results/gemma_emmvgwas_compat_smoke/compat_smoke_manifest.tsv`。
+- `cmake --build build --target check_gemma_compat`：构建 `cosmicscanner` 后立即运行 GEMMA/EMmvGWAS 兼容 CTest，是当前最短落地验收命令。
+- `tests/run_gemma_bslmm_reference_validation.sh` 或 `cmake --build build --target check_gemma_reference`：在本机存在 GEMMA 时运行外部 GEMMA `-bslmm 2` reference validation，比较 CS/GEMMA 的 `.param.txt` alpha 和 `.bv.txt` breeding value 相关性。
+- `tests/run_gemma_multivariate_validation.sh` 或 `cmake --build build --target check_gemma_mv_reference`：运行外部 GEMMA 多性状 mvLMM reference validation，并在安装 EMmvGWAS R 包时同步比较 EMmvGWAS `gwas_all`。该测试对 GEMMA full/exact、GEMMA mode 1/2/3、exact CRT、GxE/full GxE、EMmvGWAS full/semi G/R 路线设置硬性相关性和输出形状阈值。
+- `cmake --build build --target check_gemma_all`：聚合运行 GEMMA/EMmvGWAS 兼容 smoke、GEMMA BSLMM2 reference 和多性状 GEMMA/EMmvGWAS reference validation。
+- `cmake --build build --target check_eb_gwas`：运行 EB-GWAS quick suite，覆盖单性状、重复力、多性状 EB smoke、validation matrix 和 standard-vs-EB report。
+- `cmake --build build --target check_eb_gwas_full`：运行 EB-GWAS full suite，额外覆盖 LOCO、calibration、calibration grid、PGEN/BGEN consistency 和 performance benchmark。
+- `docs/GEMMA_EMMVGWAS_COSMICSCANNER_SUPPORT_MATRIX_CN.md`：GEMMA、EMmvGWAS 与 CosmicScanner 三方功能支撑矩阵，明确完全支持、兼容支持、近似支持和条件验证边界。
 
 方法说明：
-- `docs/RRM_Dynamic_GWAS_Methods_Validation_CN.md`：纵向/动态性状 GWAS 的模型、统计量、输出、模拟验证和可视化说明。
+- `docs/RRM_GWAS_VALIDATION_CN.md`：纵向/动态性状 GWAS 的模型、统计量、输出、模拟验证和可视化说明。
 
 ## 开发状态
+
+### 数据与引擎基础设施
 - [x] PLINK 1.9/2.0 & BGEN 读取支持
 - [x] 高效 GRM 构建 (Dense & Sparse)
 - [x] Exact LMM & Fast-LMM 扫描引擎
 - [x] LOCO 策略实现
-- [x] 多性状 (Multivariate) LMM
-- [x] 重复测量模型 (Repeatability Model, exact + fast mode)
+- [x] IDUL/AIDUL 加速 null 求解器 (`--lmm-null-solver brent|idul|idul_plus|aidul`)
+- [x] REGENIE 风格 Biobank 两步法 (`--biobank-mode`)
+- [x] GEMMA-style eigen 工具（`--gemma-eigen`，输出 `.eigenD.txt/.eigenU.txt`）
+- [x] GEMMA-style summary-stat 工具（`--gs/-gs` 输出 `.S.txt/.size.txt/.snps.txt`，含 `--cat/--mcat/--wcat/--wsnp` 多 component S；`--gq/-gq --beta` 支持 `Z`、`BETA+SE`、`CHISQ` 或 `P`，输出 `.Vq.txt/.q.txt/.size.txt`；`--study/--ref` 和 `--mstudy/--mref --vc/--ci` 输出 summary VC/CI；`--beta/--cor --vc` 支持 GEMMA `.cor.txt` 直接 summary VC）
+- [x] GEMMA-style SNP correlation 工具（`--calccor --windowbp/--windowcm`，输出 `.cor.txt`）
+- [x] GEMMA-style variance component 工具（`--vc 1|2|3`，输出 `.vc.txt/.vc.summary.txt`）
+- [x] 输入适配层 MVP（csv/tsv/txt → prepared input，支持 repeatability/rrm/lmm/multivariate）
+
+### GWAS 模型套件（含 GEMMA/EMmvGWAS 兼容路线）
+- [x] GEMMA-style 普通线性模型 GWAS（`--lm --lm-mode 1|2|3|4`，对应 GEMMA `-lm` Wald/LRT/Score/all；输出 `.lm.assoc.txt`）
+- [x] 单性状 LMM GWAS（默认 `--gwas`；`--lmm-gemma-mode 1|2|3|4` 对应 GEMMA `-lmm` Wald/LRT/Score/all 输出；`--lmm-gemma-refit` 启用逐 SNP alternative profile refit）
+- [x] GEMMA-style prediction（`--predict-effect <assoc/effect.tsv> --predict-score <out>`，基于 SNP effect 表输出个体预测值）
+- [x] GEMMA-style multi-locus 输出（`--bslmm 2` ridge/GBLUP；`--bslmm 1/3` deterministic sparse+ridge/probit approximation；`--bslmm 4/5` DAP BF/HYP 与 fine-mapping summary 近似；兼容 `-hmin/-hmax/-rmin/-rmax/-pmin/-pmax/-gmean/-hscale/-rscale/-pscale/-mh/-smin/-smax/-bf/-hyp`；输出 `.param.txt/.bv.txt/.hyp.txt` 或 `.bf.txt/.gamma.txt/.coef.txt`）
+- [x] 多性状 GWAS（`--multivariate`，EMMV、EMmvGWAS-compatible `vc_estimation/full_gwas/semi_gwas` alias、GEMMA mode 1/2/3/4、GEMMA-full、GEMMA-exact-style、GEMMA-GxE、hybrid、EB）
+- [x] 重复力模型 GWAS（`--repeatability-model`，exact/fast/STCG/refit-validation 四种策略）
+- [x] 随机回归 RRM GWAS（`--long-pheno` + `--rrm-order`，Legendre/B-spline 基函数，平衡/非平衡纵向）
+- [x] 母体效应模型（`--maternal-model`，ad/am/adm/c/e 多组分 VCE）
+- [x] 单步 ssGWAS（`--single-step`，H⁻¹ 矩阵，系谱+基因组联合）
+- [x] 阈值/Probit 模型（`--threshold-model --link probit|logit`）
+- [x] 计数/二项 PSR-GWAS（`--count-model --family poisson|binomial`，PSR/PQL + weighted LMM）
+- [x] 序数 PSR-GWAS（`--ordinal-model`，cumulative-binary + stacked-psr，dense-zkz + grid-reml VC 估计）
+- [x] 生存 Cox 模型（`--survival-model`，Cox PH + 鞅残差 LMM）
+- [x] GxE 反应范数模型（`--gxe-model`，Vg0+Vg1 双 VC，2-df 联合 Wald）
+
+### 检验与扩展
+- [x] 罕见变异检验（SKAT + Burden，beta 权重，混合卡方 p 值）
+- [x] SPA 鞍点近似（二元性状，CGF 求解）
+- [x] 经验贝叶斯 EB-GWAS（单性状/重复力/多性状稳定辅助路线）
+- [x] PSR-GWAS v0.5 序数 stacked-psr 落地（Wald/pseudo-score 校准通过）
+
+### 当前开发焦点
+- PSR-GWAS v0.5 多分支整合收尾（大 N 校准、score test 诊断已完成）
+- Stage 2C AI-REML 优化与大规模 N 支持规划中
+- 重复力/RRM PSR-GWAS 与 exact GLMM 为后续路线图
+
+## 相关文档
+- 中文教程：[docs/Tutorial_CN.md](docs/Tutorial_CN.md)
+- PSR-GWAS 路线图：[docs/PSR_GWAS_ROADMAP.md](docs/PSR_GWAS_ROADMAP.md)
+- PSR-GWAS 验证报告：[docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md](docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md)
+- 序数 PSR 教程：[docs/tutorials/PSR_GWAS_ORDINAL_TUTORIAL.md](docs/tutorials/PSR_GWAS_ORDINAL_TUTORIAL.md)
+- 重复力 GWAS 发布说明：[docs/REPEATABILITY_GWAS_RELEASE_CN.md](docs/REPEATABILITY_GWAS_RELEASE_CN.md)
+- RRM 方法与验证：[docs/RRM_GWAS_VALIDATION_CN.md](docs/RRM_GWAS_VALIDATION_CN.md)
+- 输入适配层规范：[docs/INPUT_ADAPTATION_SPEC_CN.md](docs/INPUT_ADAPTATION_SPEC_CN.md)
+- IDUL/AIDUL 加速路线图：[docs/IDUL_AIDUL_ROADMAP.md](docs/IDUL_AIDUL_ROADMAP.md)
+- EB-GWAS 模块：[docs/EB_GWAS_MODULE_CN.md](docs/EB_GWAS_MODULE_CN.md)
+- 新模型设计：[docs/models/NEW_MODELS_DESIGN.md](docs/models/NEW_MODELS_DESIGN.md)
+- GEMMA/EMmvGWAS/CS 支撑矩阵：[docs/GEMMA_EMMVGWAS_COSMICSCANNER_SUPPORT_MATRIX_CN.md](docs/GEMMA_EMMVGWAS_COSMICSCANNER_SUPPORT_MATRIX_CN.md)
+- GWAS 发布收口验收记录：[docs/GWAS_RELEASE_CLOSEOUT_CN.md](docs/GWAS_RELEASE_CLOSEOUT_CN.md)

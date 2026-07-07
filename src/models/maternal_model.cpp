@@ -110,6 +110,15 @@ void MaternalModel::loadPhenotype() {
             std::cerr << "Warning: skipping malformed line " << line_no << "\n";
             continue;
         }
+        // Header detection: if first line's pheno column is non-numeric, skip as header.
+        // This must happen BEFORE std::stod to avoid "Error: stod" on header rows like
+        // "FID IID DAM_ID Pheno".
+        if (header && line_no == 1) {
+            int pc = pheno_col < (int)cols.size() ? pheno_col : (int)cols.size() - 1;
+            bool is_numeric = true;
+            try { std::stod(cols[pc]); } catch (...) { is_numeric = false; }
+            if (!is_numeric) { header = false; continue; }
+        }
         header = false;
 
         std::string fid = cols[0], iid = cols[1], dam_id = cols[dam_col];
@@ -159,13 +168,12 @@ void MaternalModel::loadPhenotype() {
 void MaternalModel::loadCovariates() {
     Eigen::MatrixXf X0 = DataLoader::loadCovariates(options_.qcovar_file, options_.covar_file, fids_, iids_, n_samples_);
     int n_records = (int)y_.size();
-    int n_covars = X0.cols() + 1;
+    int n_covars = X0.cols();
     X_.resize(n_records, n_covars);
-    X_.col(0).setOnes();
     for (int r = 0; r < n_records; ++r) {
         int ai = record_to_animal_[r];
         for (int c = 0; c < X0.cols(); ++c) {
-            X_(r, 1 + c) = ai < X0.rows() ? X0(ai, c) : 0.0f;
+            X_(r, c) = ai < X0.rows() ? X0(ai, c) : 0.0f;
         }
     }
 }

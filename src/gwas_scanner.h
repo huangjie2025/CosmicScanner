@@ -24,6 +24,8 @@ public:
         double min_maf = 0.01;
         double min_hwe = 0.0;
         bool fast_lmm = false;
+        int lmm_gemma_mode = 0;
+        bool lmm_gemma_refit = false;
         bool eb_lmm = false;
         int n_threads = 1;
         bool no_loco = false;

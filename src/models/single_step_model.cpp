@@ -87,7 +87,7 @@ void SingleStepModel::prepare(const std::vector<std::string>& fids,
     DataFilter filter;
     keep_ = filter.filterSamples(y_, X_);
     std::cout << "After filtering, " << keep_.n_keep << " individuals remain.\n";
-    if (keep_.n_keep < 10) throw std::runtime_error("Too few valid samples for ssGBLUP.");
+    if (keep_.n_keep < 10) throw std::runtime_error("Too few valid samples for ssGWAS.");
 }
 
 void SingleStepModel::loadPhenotype() {
@@ -257,7 +257,7 @@ void SingleStepModel::computeHInverse() {
 }
 
 void SingleStepModel::runVCE() {
-    std::cout << "Running ssGBLUP VCE...\n";
+    std::cout << "Running ssGWAS VCE...\n";
 
     int n = keep_.n_keep;
     int n_ped = (int)pedigree_.size();
@@ -308,7 +308,7 @@ void SingleStepModel::runVCE() {
 }
 
 void SingleStepModel::scanGwas() {
-    std::cout << "Running ssGBLUP-informed GWAS scan (using H⁻¹ VCs)...\n";
+    std::cout << "Running ssGWAS-informed GWAS scan (using H⁻¹ VCs)...\n";
     std::cout << "  Fixed VCs: Vg=" << sigma2_g_ << " Ve=" << sigma2_e_ << "\n";
 
     // Determine chromosomes
@@ -416,10 +416,10 @@ void SingleStepModel::scanGwas() {
     };
 
     if (!use_loco) {
-        std::cout << "Using standard LMM with ssGBLUP VCs (no LOCO)...\n";
+        std::cout << "Using standard LMM with ssGWAS VCs (no LOCO)...\n";
         run_scan(G_sub, "");
     } else {
-        std::cout << "Running LOCO scan using ssGBLUP VCs on "
+        std::cout << "Running LOCO scan using ssGWAS VCs on "
                   << split.chrom_labels.size() << " chromosomes...\n";
         for (size_t ci = 0; ci < split.chrom_labels.size(); ++ci) {
             const std::string& chrom = split.chrom_labels[ci];
@@ -446,7 +446,7 @@ void SingleStepModel::scanGwas() {
             }
         }
     }
-    std::cout << "ssGBLUP results saved to " << out_file << "\n";
+    std::cout << "ssGWAS results saved to " << out_file << "\n";
 }
 
 void SingleStepModel::writeEbv() {
@@ -465,7 +465,7 @@ void SingleStepModel::writeNullSummary() const {
     double h2 = sigma2_g_ / (sigma2_g_ + sigma2_e_ + 1e-10);
     ofs << sigma2_g_ << "\t" << sigma2_e_ << "\t" << h2 << "\n";
     ofs.close();
-    std::cout << "ssGBLUP null model summary written to " << fname << "\n";
+    std::cout << "ssGWAS null model summary written to " << fname << "\n";
 }
 
 void SingleStepModel::run() {

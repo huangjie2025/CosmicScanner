@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <omp.h>
 #include <Eigen/Dense>
@@ -278,11 +279,52 @@ inline void runMakeGrm(const GwasConfig& cfg, PlinkReader& plink_reader, BgenRea
     }
 }
 
+inline void runGemmaEigen(const GwasConfig& cfg, PlinkReader& plink_reader, BgenReader& bgen_reader, PgenReader& pgen_reader, bool is_bgen, bool is_pgen) {
+    std::cout << "Calculating GEMMA-style eigen decomposition...\n";
+    GrmBuilder::Options opts;
+    opts.min_maf = (float)cfg.min_maf;
+    opts.min_hwe = (float)cfg.min_hwe;
+    opts.algorithm = cfg.grm_alg;
+    opts.force_slow = cfg.force_slow;
+    opts.snp_weight_file = cfg.snp_weight_file;
+    opts.pop_class_file = cfg.pop_class_file;
+    #ifdef _OPENMP
+    opts.thread_num = omp_get_max_threads();
+    #endif
+
+    GrmBuilder builder(opts);
+    if (is_bgen) builder.compute(bgen_reader);
+    else if (is_pgen) builder.compute(pgen_reader);
+    else builder.compute(plink_reader);
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(builder.getGrm());
+    if (es.info() != Eigen::Success) throw std::runtime_error("GRM eigen decomposition failed");
+
+    std::ofstream fd(cfg.out_prefix + ".eigenD.txt");
+    std::ofstream fu(cfg.out_prefix + ".eigenU.txt");
+    if (!fd || !fu) throw std::runtime_error("Cannot write GEMMA-style eigen output");
+    fd << std::scientific << std::setprecision(12);
+    fu << std::scientific << std::setprecision(12);
+    const auto& eval = es.eigenvalues();
+    const auto& evec = es.eigenvectors();
+    for (int i = 0; i < eval.size(); ++i) fd << eval[i] << "\n";
+    for (int i = 0; i < evec.rows(); ++i) {
+        for (int j = 0; j < evec.cols(); ++j) {
+            if (j) fu << "\t";
+            fu << evec(i, j);
+        }
+        fu << "\n";
+    }
+    std::cout << "GEMMA-style eigen outputs written to " << cfg.out_prefix
+              << ".eigenD.txt and " << cfg.out_prefix << ".eigenU.txt\n";
+}
+
 } // namespace DataLoader
 
 using DataLoader::loadGenotype;
 using DataLoader::loadCovariates;
 using DataLoader::loadPhenotype;
 using DataLoader::runMakeGrm;
+using DataLoader::runGemmaEigen;
 
 } // namespace cosmic

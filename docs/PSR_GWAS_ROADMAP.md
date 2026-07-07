@@ -28,7 +28,7 @@ Implemented acceptance criteria:
 - `tests/summarize_psr_gwas_benchmark.py` writes `psr_convergence_summary.tsv` and merges convergence status into `psr_gwas_benchmark.summary.tsv`.
 - Warning flags currently include `WARNING_PSR_MAXIT_REACHED`, `WARNING_PSR_CLIPPED`, `WARNING_PSR_SIGMA_BOUNDARY`, and `WARNING_PSR_QUASILIK_DECREASED`.
 - Convergence summaries classify each trait as `OK`, `CONVERGED_WITH_WARNING`, or `NOT_CONVERGED`.
-- `docs/PSR_GWAS_V0.2_VALIDATION_SUMMARY.md` records the current validation commands, outputs, and known limitations.
+- `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md` records the v0.5 validation commands, outputs, and known limitations.
 - Binary traits require both cases and controls after filtering.
 - Binomial records require finite `0 <= EVENT <= TRIAL` and `TRIAL > 0`.
 - Poisson/negative-binomial traits require finite non-negative phenotype values.
@@ -64,7 +64,7 @@ Current MVP:
 - `tests/run_psr_candidate_refinement_suite.sh` tests the default GLM path and optional dependency degradation paths.
 - `tests/test_psr_input_validation.sh` covers invalid PSR inputs and the missing-package refinement degradation path.
 - `tests/summarize_psr_gwas_benchmark.py` now emits `psr_validation_report.md` and folds convergence, weighted equivalence, R baseline, refinement, and simulation summaries into `psr_gwas_benchmark.summary.tsv`.
-- `docs/PSR_GWAS_V0.3_STABLE_SUMMARY.md` records the stable sprint state and limitations.
+- `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md` records the v0.5 stable sprint state and limitations.
 - `tests/run_psr_stable_ci.sh` provides a one-command fast CI wrapper around `run_gwas_core_regression.sh --fast --with-psr`.
 - `tests/run_psr_formal_simulation.py` provides a configurable real-CosmicScanner formal simulation skeleton for paper-level validation, kept separate from CI-scale smoke tests.
 
@@ -80,9 +80,11 @@ Completed:
 
 - v0.4: experimental ordinal cumulative-binary PSR-GWAS MVP.
 - v0.5: stacked proportional-odds ordinal PSR-GWAS with dense ZKZ, grid/profile REML, corrected Wald / pseudo-score calibration, score diagnostics, and large-N validation.
+- v0.5 landing: Wald p-value bug fixed (`erfc(|z|/sqrt(2))`); focused large-N calibration passed (N=200/500, lambda GC 1.01/0.94, top10 100%, convergence 100%). See `docs/PSR_GWAS_VALIDATION_REPORT_V0.5.md`.
 
 Next:
 
+- Stage 2C: AI-REML or faster optimization for sigma2_g estimation; sparse/low-rank K_stack for large N.
 - Repeated-measure PSR-GWAS with additive genetic + permanent environment + working residual variance.
 - Random-regression PSR-GWAS experimental entry point.
 - Larger ordinal calibration grid and external real-data validation for manuscript reporting.

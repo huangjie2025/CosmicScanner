@@ -13,6 +13,8 @@ RUN_REPEATABILITY_EB=1
 RUN_MV_EB=1
 RUN_MV_SMOKE=1
 RUN_MV_VALIDATION=1
+RUN_GEMMA_COMPAT_SMOKE=0
+RUN_GEMMA_REFERENCE=0
 RUN_RRM=0
 RUN_EB_VALIDATION=0
 RUN_EB_LOCO=0
@@ -41,6 +43,9 @@ Options:
   --with-eb-suite   Run board-level EB GWAS suite/dashboard
   --with-eb-grid    Also run EB calibration grid benchmark
   --with-psr        Also run PSR-GWAS binary/binomial/Poisson smoke and R baseline summary
+  --with-gemma-compat-smoke Also run local GEMMA/EMmvGWAS compatibility smoke without external GEMMA/R
+  --with-gemma-reference Also run external GEMMA BSLMM2 reference validation when GEMMA is available
+  --compat-smoke-only Run only local GEMMA/EMmvGWAS compatibility smoke
   --rrm-only         Run only RRM dynamic GWAS smoke + simulation validation
   --fast             Run EB smoke tests + multivariate smoke + GEMMA/EMmvGWAS validation
   --no-matrix        Skip multivariate validation matrix
@@ -78,6 +83,9 @@ while [[ $# -gt 0 ]]; do
     --with-eb-suite) RUN_EB_SUITE=1 ;;
     --with-eb-grid) RUN_EB_GRID=1 ;;
     --with-psr) RUN_PSR=1 ;;
+    --with-gemma-compat-smoke) RUN_GEMMA_COMPAT_SMOKE=1 ;;
+    --with-gemma-reference) RUN_GEMMA_REFERENCE=1 ;;
+    --compat-smoke-only) RUN_GEMMA_ACC=0; RUN_EB_SMOKE=0; RUN_REPEATABILITY_EB=0; RUN_MV_EB=0; RUN_MATRIX=0; RUN_MV_SMOKE=0; RUN_MV_VALIDATION=0; RUN_PGEN=0; RUN_RRM=0; RUN_PSR=0; RUN_GEMMA_COMPAT_SMOKE=1 ;;
     --rrm-only) RUN_GEMMA_ACC=0; RUN_EB_SMOKE=0; RUN_REPEATABILITY_EB=0; RUN_MV_EB=0; RUN_MATRIX=0; RUN_MV_SMOKE=0; RUN_MV_VALIDATION=0; RUN_PGEN=0; RUN_RRM=1 ;;
     --fast) RUN_GEMMA_ACC=0; RUN_MATRIX=0 ;;
     --no-matrix) RUN_MATRIX=0 ;;
@@ -145,6 +153,14 @@ fi
 
 if [[ ${RUN_MV_VALIDATION} -eq 1 ]]; then
   run_optional_script "multivariate GEMMA/EMmvGWAS validation" "${ROOT}/tests/run_gemma_multivariate_validation.sh"
+fi
+
+if [[ ${RUN_GEMMA_COMPAT_SMOKE} -eq 1 ]]; then
+  run_optional_script "local GEMMA/EMmvGWAS compatibility smoke" "${ROOT}/tests/run_gemma_emmvgwas_compat_smoke.sh"
+fi
+
+if [[ ${RUN_GEMMA_REFERENCE} -eq 1 ]]; then
+  run_optional_script "external GEMMA BSLMM reference validation" "${ROOT}/tests/run_gemma_bslmm_reference_validation.sh"
 fi
 
 if [[ ${RUN_MATRIX} -eq 1 ]]; then

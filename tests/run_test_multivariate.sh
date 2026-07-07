@@ -22,6 +22,8 @@ from pathlib import Path
 
 root = Path("/disk228/huangjie/PanOmics/CosmicScanner")
 src_prefix = root / "examples" / "mouse_clean" / "mouse_clean"
+if not src_prefix.with_suffix(".bed").exists():
+    src_prefix = root / "tests" / "data" / "mv_eb_smoke" / "mv_eb"
 dst_prefix = root / "tests" / "data" / "multivariate_mouse_clean" / "mouse_multivariate_subset"
 pheno_out = root / "tests" / "results" / "multivariate_mouse_clean" / "mouse_multivariate.pheno"
 
@@ -32,7 +34,9 @@ with src_prefix.with_suffix(".pheno").open("r", encoding="utf-8") as f:
         if len(parts) < 3 or parts[2] == "NA":
             continue
         try:
-            pheno_map[(parts[0], parts[1])] = float(parts[2])
+            y1 = float(parts[2])
+            y2 = float(parts[3]) if len(parts) > 3 and parts[3] != "NA" else None
+            pheno_map[(parts[0], parts[1])] = (y1, y2)
         except ValueError:
             continue
 
@@ -59,7 +63,7 @@ with src_prefix.with_suffix(".bim").open("r", encoding="utf-8") as f:
     chr2 = []
     for line in f:
         parts = line.strip().split()
-        if len(parts) >= 6:
+        if len(parts) >= 5:
             if parts[0] == "1" and len(chr1) < 48:
                 chr1.append(parts)
             elif parts[0] == "2" and len(chr2) < 48:
@@ -76,7 +80,7 @@ raw = src_bed.read_bytes()
 if raw[:3] != b"\x6c\x1b\x01":
     raise SystemExit("Unexpected PLINK .bed header.")
 
-n_src = 1940
+n_src = sum(1 for _ in src_prefix.with_suffix(".fam").open("r", encoding="utf-8"))
 n_keep = len(keep_indices)
 src_bps = (n_src + 3) // 4
 dst_bps = (n_keep + 3) // 4
@@ -102,8 +106,8 @@ with pheno_out.open("w", encoding="utf-8") as f:
     f.write("FID\tIID\tTrait1\tTrait2\n")
     for idx, row in enumerate(fam_rows):
         fid, iid = row[0], row[1]
-        y1 = pheno_map[(fid, iid)]
-        y2 = 0.65 * y1 + (0.20 if idx % 2 == 0 else -0.15) + 0.01 * idx
+        y1, y2_src = pheno_map[(fid, iid)]
+        y2 = y2_src if y2_src is not None else 0.65 * y1 + (0.20 if idx % 2 == 0 else -0.15) + 0.01 * idx
         f.write(f"{fid}\t{iid}\t{y1:.6f}\t{y2:.6f}\n")
 PY
 

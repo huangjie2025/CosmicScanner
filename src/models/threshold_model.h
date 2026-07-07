@@ -36,6 +36,7 @@ public:
         double max_weight = 1e8;
         int reml_maxit = 100;
         double reml_tol = 1e-6;
+        bool psr_null_only = false;
         int mpheno = 1;
         std::string pheno_file;
         std::string qcovar_file;

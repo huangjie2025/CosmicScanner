@@ -192,7 +192,7 @@ with (out/'eb_gwas_suite.dashboard.md').open('w') as f:
         for r in calibration_grid:
             f.write(f"| {r['label']} | {r['scenario']} | {r['reps']} | {r['eb_mbonf_reps_with_hits']} | {float(r['mean_effective_tests']):.4g} | {r['power_causal_top10']} |\n")
     f.write('\n## Reporting Note\n\n')
-    f.write('EB-GWAS remains experimental. Report standard LMM/mvLMM/repeatability GWAS, ordinary Bonferroni/FDR, and EB-mBonf together; do not report EB-mBonf alone.\n')
+    f.write('EB-GWAS default routes are validated auxiliary scans. Report standard LMM/mvLMM/repeatability GWAS, ordinary Bonferroni/FDR, and EB-mBonf together; do not report EB-mBonf alone.\n')
 
 print(f'EB GWAS suite dashboard written: {out / "eb_gwas_suite.dashboard.md"}')
 PY

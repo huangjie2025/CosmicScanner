@@ -102,7 +102,7 @@ run_test "maternal_n1000" "Maternal model, 1000 samples, 10000 SNPs" \
 # =====================================================================
 awk '{print $2, 0, 0}' "${N1000_PREFIX}.fam" > "${RESULTS_DIR}/singlestep_n1000.ped"
 awk '{print $2}' "${N1000_PREFIX}.fam" > "${RESULTS_DIR}/singlestep_n1000.genolist"
-run_test "singlestep_n1000" "ssGBLUP, 1000 samples, 10000 SNPs" \
+run_test "singlestep_n1000" "ssGWAS, 1000 samples, 10000 SNPs" \
     "$SCANNER --bfile $N1000_PREFIX --pheno ${N1000_PREFIX}.pheno --gwas --single-step --ped ${RESULTS_DIR}/singlestep_n1000.ped --genotyped-list ${RESULTS_DIR}/singlestep_n1000.genolist --no-loco --out ${RESULTS_DIR}/singlestep_n1000"
 
 # =====================================================================

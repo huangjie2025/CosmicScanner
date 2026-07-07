@@ -19,6 +19,10 @@ public:
         double min_maf = 0.01;
         double min_hwe = 0.0;
         bool fast_lmm = false;
+        int lmm_gemma_mode = 0;
+        bool lmm_gemma_refit = false;
+        bool linear_model = false;
+        int linear_model_mode = 4;
         bool eb_lmm = false;
         int n_threads = 1;
         bool no_loco = false;
@@ -64,6 +68,8 @@ public:
     void run();
 
 private:
+    void runLinearModel();
+
     Options options_;
     int n_samples_ = 0;
     std::vector<std::string> fids_, iids_;

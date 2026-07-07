@@ -25,11 +25,20 @@ public:
         bool use_emmv = true;
         bool use_gemma_refit = false;
         bool use_gemma_full = false;
+        bool use_gemma_exact = false;
+        bool use_gemma_gxe = false;
         bool use_hybrid = false;
         bool use_eb = false;
         bool test_wald = true;
         bool test_lrt = true;
         bool test_score = true;
+        int gemma_mode = 4;
+        double pnr = 0.001;
+        int gemma_emi = 10000;
+        int gemma_nri = 100;
+        double gemma_emp = 0.0001;
+        double gemma_nrp = 0.0001;
+        bool gemma_crt = false;
         int refine_top = 100;
         double refine_p = 1e-3;
         int refine_discrepancy_top = 0;
@@ -40,6 +49,11 @@ public:
         double reml_tol = 1e-8;
         bool use_aireml = false;
         bool use_emmvgwas_lambda = false;
+        bool output_vbeta = false;
+        bool output_emmvgwas = false;
+        bool emmvgwas_vc_only = false;
+        std::string emmvgwas_G_file;
+        std::string emmvgwas_R_file;
         int em_min_iter = 10;
         int ai_max_iter = 50;
         double ai_tol = 1e-8;
@@ -48,6 +62,7 @@ public:
         std::vector<int> mpheno_list;
         std::string qcovar_file;
         std::string covar_file;
+        int env_covar_col = -1;
         std::string scan_chrom;
         long long scan_from_bp = -1;
         long long scan_to_bp = -1;
@@ -82,6 +97,7 @@ private:
 
     Eigen::MatrixXd Y_;
     Eigen::MatrixXd X_;
+    Eigen::VectorXd env_;
     DataFilter::KeepInfo keep_;
     int n_keep_ = 0;
     std::vector<char> refine_mask_;
@@ -96,8 +112,10 @@ private:
     void runNoLoco();
     void runLoco();
     void runGemmaRefit();
+    void runGemmaGxe();
     void runHybrid();
     void writeResults(const std::string& out_file, const std::vector<MvGwasResult>& results);
+    void writeEmmvgwasOutputs(const MvEigenVce& vce, const std::vector<MvGwasResult>& results) const;
     void writeEbSummary(const std::string& out_file) const;
 };
 

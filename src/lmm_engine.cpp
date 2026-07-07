@@ -57,6 +57,151 @@ static double chisq_prob(double stat, int df) {
     if (stat <= 0) return 1.0;
     return gamma_q(df / 2.0, stat / 2.0);
 }
+
+static void fill_gemma_lmm_tests(GwasResult& res,
+                                 double score,
+                                 double var_score,
+                                 double null_quad,
+                                 double n_eff) {
+    if (!(var_score > 1e-12) || !(null_quad > 0.0) || !std::isfinite(score) ||
+        !std::isfinite(var_score) || !std::isfinite(null_quad)) {
+        return;
+    }
+    const double score_chisq = score * score / var_score;
+    const double alt_quad = std::max(null_quad - score_chisq, std::numeric_limits<double>::min());
+    const double lrt = std::max(0.0, n_eff * std::log(null_quad / alt_quad));
+
+    res.score_stat = score_chisq;
+    res.wald_stat = score_chisq;
+    res.lrt_stat = lrt;
+    res.p_score = chisq_prob(score_chisq, 1);
+    res.p_wald = chisq_prob(score_chisq, 1);
+    res.p_lrt = chisq_prob(lrt, 1);
+}
+
+struct ProfileRemlFit {
+    bool ok = false;
+    double logl = -std::numeric_limits<double>::infinity();
+    double beta_last = 0.0;
+    double se_last = std::numeric_limits<double>::quiet_NaN();
+};
+
+static Eigen::MatrixXd append_design_column(const Eigen::MatrixXd& X,
+                                            const Eigen::VectorXd& x) {
+    Eigen::MatrixXd out(X.rows(), X.cols() + 1);
+    if (X.cols() > 0) out.leftCols(X.cols()) = X;
+    out.col(X.cols()) = x;
+    return out;
+}
+
+static ProfileRemlFit profile_lmm_fit(const Eigen::VectorXd& D,
+                                      const Eigen::VectorXd& y,
+                                      const Eigen::MatrixXd& X,
+                                      bool restricted) {
+    ProfileRemlFit best;
+    const int n = (int)y.size();
+    const int p = (int)X.cols();
+    const double n_eff = std::max(1.0, restricted ? (double)(n - p) : (double)n);
+    if (n <= 0 || D.size() != n || X.rows() != n || n <= p) return best;
+
+    auto eval = [&](double log_eta, Eigen::VectorXd* beta_out,
+                    Eigen::MatrixXd* xtx_inv_out, double* sigma2_out) -> double {
+        const double eta = std::exp(std::min(20.0, std::max(-20.0, log_eta)));
+        Eigen::VectorXd H = eta * D.array() + 1.0;
+        for (int i = 0; i < H.size(); ++i) if (!(H[i] > 1e-12)) H[i] = 1e-12;
+        Eigen::VectorXd Hinv = H.cwiseInverse();
+        Eigen::VectorXd resid = y;
+        Eigen::MatrixXd XtHinvX;
+        Eigen::MatrixXd XtHinvX_inv;
+        Eigen::VectorXd beta;
+        double log_det_X = 0.0;
+
+        if (p > 0) {
+            Eigen::MatrixXd Xw = X.array().colwise() * Hinv.array().sqrt();
+            Eigen::VectorXd yw = y.array() * Hinv.array().sqrt();
+            XtHinvX = Xw.transpose() * Xw;
+            XtHinvX.diagonal().array() += 1e-10;
+            Eigen::LDLT<Eigen::MatrixXd> solver(XtHinvX);
+            if (solver.info() == Eigen::Success) {
+                XtHinvX_inv = solver.solve(Eigen::MatrixXd::Identity(p, p));
+                beta = solver.solve(Xw.transpose() * yw);
+                log_det_X = solver.vectorD().array().abs().cwiseMax(1e-300).log().sum();
+            } else {
+                Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixXd> cod(XtHinvX);
+                beta = cod.solve(Xw.transpose() * yw);
+                XtHinvX_inv = cod.pseudoInverse();
+                Eigen::JacobiSVD<Eigen::MatrixXd> svd(XtHinvX);
+                const auto& s = svd.singularValues();
+                for (int i = 0; i < s.size(); ++i) log_det_X += std::log(std::max(1e-300, s[i]));
+            }
+            resid -= X * beta;
+        }
+
+        const double quad = (resid.array().square() * Hinv.array()).sum();
+        if (!(quad > 0.0) || !std::isfinite(quad)) return -std::numeric_limits<double>::infinity();
+        const double log_det_H = H.array().log().sum();
+        const double sigma2 = quad / n_eff;
+        const double logl = -0.5 * (log_det_H + (restricted ? log_det_X : 0.0) +
+                                    n_eff * std::log(sigma2) + n_eff);
+        if (beta_out) *beta_out = beta;
+        if (xtx_inv_out) *xtx_inv_out = XtHinvX_inv;
+        if (sigma2_out) *sigma2_out = sigma2;
+        return logl;
+    };
+
+    const double lo = -12.0;
+    const double hi = 12.0;
+    const double gr = (std::sqrt(5.0) - 1.0) / 2.0;
+    double a = lo, b = hi;
+    double c = b - gr * (b - a);
+    double d = a + gr * (b - a);
+    double fc = eval(c, nullptr, nullptr, nullptr);
+    double fd = eval(d, nullptr, nullptr, nullptr);
+    for (int iter = 0; iter < 80; ++iter) {
+        if (fc < fd) {
+            a = c;
+            c = d;
+            fc = fd;
+            d = a + gr * (b - a);
+            fd = eval(d, nullptr, nullptr, nullptr);
+        } else {
+            b = d;
+            d = c;
+            fd = fc;
+            c = b - gr * (b - a);
+            fc = eval(c, nullptr, nullptr, nullptr);
+        }
+    }
+
+    const double opt = 0.5 * (a + b);
+    Eigen::VectorXd beta;
+    Eigen::MatrixXd xtx_inv;
+    double sigma2 = 0.0;
+    best.logl = eval(opt, &beta, &xtx_inv, &sigma2);
+    best.ok = std::isfinite(best.logl);
+    if (best.ok && p > 0 && beta.size() == p && xtx_inv.rows() == p) {
+        best.beta_last = beta[p - 1];
+        const double var = sigma2 * xtx_inv(p - 1, p - 1);
+        best.se_last = (var > 0.0 && std::isfinite(var)) ? std::sqrt(var) : std::numeric_limits<double>::quiet_NaN();
+    }
+    return best;
+}
+
+static void apply_gemma_refit(GwasResult& res,
+                              const ProfileRemlFit& null_ml,
+                              const ProfileRemlFit& alt_ml,
+                              const ProfileRemlFit& alt_reml) {
+    if (alt_reml.ok && alt_reml.se_last > 0.0) {
+        res.beta = alt_reml.beta_last;
+        res.se = alt_reml.se_last;
+        res.wald_stat = (res.beta / res.se) * (res.beta / res.se);
+        res.p_wald = chisq_prob(res.wald_stat, 1);
+    }
+    if (null_ml.ok && alt_ml.ok) {
+        res.lrt_stat = std::max(0.0, 2.0 * (alt_ml.logl - null_ml.logl));
+        res.p_lrt = chisq_prob(res.lrt_stat, 1);
+    }
+}
 // --------------------------------------------------------
 
 void LmmEngine::prepareBiobank(const Eigen::VectorXd& y,
@@ -523,7 +668,10 @@ struct EbMarkerFit {
     double post_var = 0.0;
     double confidence = 0.0;
     double wald = 0.0;
+    double lrt = 0.0;
+    double lrt_p = 1.0;
     double p_value = 1.0;
+    int conv = 0;
 };
 
 static double logdet_ldlt(const Eigen::MatrixXd& M) {
@@ -612,7 +760,8 @@ static EbMarkerFit fit_eb_marker(const Eigen::VectorXd& D,
     };
 
     double best_lambda = 0.0;
-    double best_ll = eval_loglike(0.0);
+    const double null_ll = eval_loglike(0.0);
+    double best_ll = null_ll;
     const int grid_n = 49;
     std::vector<double> grid;
     grid.reserve(grid_n);
@@ -645,9 +794,16 @@ static EbMarkerFit fit_eb_marker(const Eigen::VectorXd& D,
         best_lambda = std::exp(0.5 * (left + right));
     }
 
-    if (!(best_lambda > 1e-10) || !std::isfinite(best_lambda)) return fit;
+    if (!(best_lambda > 1e-10) || !std::isfinite(best_lambda)) {
+        fit.conv = std::isfinite(null_ll) ? 0 : 1;
+        return fit;
+    }
     double quad = 0.0, q = 0.0, zHres = 0.0;
-    eval_loglike(best_lambda, &quad, nullptr, &q, &zHres);
+    const double final_ll = eval_loglike(best_lambda, &quad, nullptr, &q, &zHres);
+    if (!std::isfinite(final_ll)) {
+        fit.conv = 1;
+        return fit;
+    }
     fit.lambda = best_lambda;
     fit.sigma2 = quad / (double)n_eff;
     fit.beta = best_lambda * zHres;
@@ -656,6 +812,10 @@ static EbMarkerFit fit_eb_marker(const Eigen::VectorXd& D,
     if (fit.post_var > 1e-20 && std::isfinite(fit.post_var)) {
         fit.wald = fit.beta * fit.beta / fit.post_var;
         fit.p_value = chisq_prob(fit.wald, 1);
+    }
+    if (std::isfinite(null_ll)) {
+        fit.lrt = std::max(0.0, 2.0 * (final_ll - null_ll));
+        fit.lrt_p = chisq_prob(fit.lrt, 1);
     }
     return fit;
 }
@@ -703,6 +863,10 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
     }
 
     Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    const double null_quad = std::max(resid.dot(P_y), std::numeric_limits<double>::min());
+    const double n_eff_lmm = std::max(1.0, static_cast<double>(Uty.size() - UtX.cols()));
+    ProfileRemlFit null_ml_refit;
+    if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
     SPATest::Options spa_opts;
     spa_opts.pval_threshold = 0.05;
@@ -767,6 +931,14 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
             results[j].se = beta_se;
             results[j].p_value = pval;
             results[j].log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+            fill_gemma_lmm_tests(results[j], score, var_score, null_quad, n_eff_lmm);
+            if (options.gemma_refit) {
+                Eigen::VectorXd alt_col = UtG.col(col);
+                Eigen::MatrixXd alt_X = append_design_column(UtX, alt_col);
+                ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
+                ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
+                apply_gemma_refit(results[j], null_ml_refit, alt_ml_refit, alt_reml_refit);
+            }
         }
         snp_indices.clear();
         freqs.clear();
@@ -870,6 +1042,10 @@ void LmmEngine::scanEB(const PlinkReader& reader, std::vector<GwasResult>& resul
         results[j].eb_post_var = eb.post_var;
         results[j].eb_confidence = eb.confidence;
         results[j].eb_wald = eb.wald;
+        results[j].eb_lrt = eb.lrt;
+        results[j].eb_lrt_p = eb.lrt_p;
+        results[j].eb_sigma2 = eb.sigma2;
+        results[j].eb_conv = eb.conv;
     }
 }
 
@@ -923,6 +1099,10 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
     }
 
     Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    const double null_quad = std::max(resid.dot(P_y), std::numeric_limits<double>::min());
+    const double n_eff_lmm = std::max(1.0, static_cast<double>(Uty.size() - UtX.cols()));
+    ProfileRemlFit null_ml_refit;
+    if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
     SPATest::Options spa_opts;
     spa_opts.pval_threshold = 0.05;
@@ -1019,6 +1199,13 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
         results[j].se = beta_se;
         results[j].p_value = pval;
         results[j].log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+        fill_gemma_lmm_tests(results[j], score, var_score, null_quad, n_eff_lmm);
+        if (options.gemma_refit) {
+            Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
+            ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
+            ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
+            apply_gemma_refit(results[j], null_ml_refit, alt_ml_refit, alt_reml_refit);
+        }
     }
 }
 
@@ -1070,6 +1257,10 @@ void LmmEngine::scanEB(PgenReader& reader, std::vector<GwasResult>& results, con
         results[j].eb_post_var = eb.post_var;
         results[j].eb_confidence = eb.confidence;
         results[j].eb_wald = eb.wald;
+        results[j].eb_lrt = eb.lrt;
+        results[j].eb_lrt_p = eb.lrt_p;
+        results[j].eb_sigma2 = eb.sigma2;
+        results[j].eb_conv = eb.conv;
     }
 }
 
@@ -1116,6 +1307,10 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     }
 
     Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    const double null_quad = std::max(resid.dot(P_y), std::numeric_limits<double>::min());
+    const double n_eff_lmm = std::max(1.0, static_cast<double>(Uty.size() - UtX.cols()));
+    ProfileRemlFit null_ml_refit;
+    if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
     SPATest::Options spa_opts;
     spa_opts.pval_threshold = 0.05;
@@ -1209,6 +1404,13 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
         results[j].se = beta_se;
         results[j].p_value = pval;
         results[j].log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+        fill_gemma_lmm_tests(results[j], score, var_score, null_quad, n_eff_lmm);
+        if (options.gemma_refit) {
+            Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
+            ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
+            ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
+            apply_gemma_refit(results[j], null_ml_refit, alt_ml_refit, alt_reml_refit);
+        }
     }
 }
 
@@ -1260,6 +1462,10 @@ void LmmEngine::scanEB(BgenReader& reader, std::vector<GwasResult>& results, con
         results[j].eb_post_var = eb.post_var;
         results[j].eb_confidence = eb.confidence;
         results[j].eb_wald = eb.wald;
+        results[j].eb_lrt = eb.lrt;
+        results[j].eb_lrt_p = eb.lrt_p;
+        results[j].eb_sigma2 = eb.sigma2;
+        results[j].eb_conv = eb.conv;
     }
 }
 

@@ -26,19 +26,36 @@ from pathlib import Path
 
 root = Path("/disk228/huangjie/PanOmics/CosmicScanner")
 src_prefix = root / "examples" / "mouse_clean" / "mouse_clean"
+if not src_prefix.with_suffix(".bed").exists():
+    src_prefix = root / "tests" / "data" / "repeatability_eb_smoke" / "repeatability_eb"
 dst_prefix = root / "tests" / "data" / "repeatability_mouse_clean" / "mouse_repeatability_subset"
 dst = root / "tests" / "results" / "repeatability_mouse_clean" / "mouse_clean.repeatability.pheno"
 
 pheno_map = {}
-with (src_prefix.with_suffix(".pheno")).open("r", encoding="utf-8") as f:
-    for line in f:
-        parts = line.strip().split()
-        if len(parts) < 3 or parts[2] == "NA":
-            continue
-        try:
-            pheno_map[(parts[0], parts[1])] = float(parts[2])
-        except ValueError:
-            continue
+pheno_file = src_prefix.with_suffix(".pheno")
+long_pheno_file = src_prefix.with_suffix(".long.pheno")
+if pheno_file.exists():
+    with pheno_file.open("r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) < 3 or parts[2] == "NA":
+                continue
+            try:
+                pheno_map[(parts[0], parts[1])] = [float(parts[2])]
+            except ValueError:
+                continue
+elif long_pheno_file.exists():
+    with long_pheno_file.open("r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) < 3 or parts[2] == "NA":
+                continue
+            try:
+                pheno_map.setdefault((parts[0], parts[1]), []).append(float(parts[2]))
+            except ValueError:
+                continue
+else:
+    raise SystemExit(f"Missing phenotype file for repeatability source: {src_prefix}")
 
 fam_rows = []
 keep_indices = []
@@ -48,7 +65,7 @@ with (src_prefix.with_suffix(".fam")).open("r", encoding="utf-8") as f:
         if len(parts) < 6:
             continue
         key = (parts[0], parts[1])
-        if key in pheno_map:
+        if key in pheno_map and pheno_map[key]:
             fam_rows.append(parts)
             keep_indices.append(idx)
         if len(fam_rows) >= 20:
@@ -63,7 +80,7 @@ with (src_prefix.with_suffix(".bim")).open("r", encoding="utf-8") as f:
     chr2 = []
     for line in f:
         parts = line.strip().split()
-        if len(parts) >= 6:
+        if len(parts) >= 5:
             if parts[0] == "1" and len(chr1) < 64:
                 chr1.append(parts)
             elif parts[0] == "2" and len(chr2) < 64:
@@ -87,7 +104,7 @@ raw = src_bed.read_bytes()
 if raw[:3] != b"\x6c\x1b\x01":
     raise SystemExit("Unexpected PLINK .bed header.")
 
-n_src = 1940
+n_src = sum(1 for _ in src_prefix.with_suffix(".fam").open("r", encoding="utf-8"))
 n_keep = len(keep_indices)
 m_keep = len(bim_rows)
 src_bps = (n_src + 3) // 4
@@ -113,12 +130,13 @@ with dst_fam.open("w", encoding="utf-8") as f:
 rows = []
 for row in fam_rows:
     fid, iid = row[0], row[1]
-    rows.append((fid, iid, pheno_map[(fid, iid)]))
+    values = pheno_map[(fid, iid)]
+    rows.append((fid, iid, values[0], values[1] if len(values) > 1 else None))
 
 with dst.open("w", encoding="utf-8") as f:
-    for idx, (fid, iid, y) in enumerate(rows):
+    for idx, (fid, iid, y, y2) in enumerate(rows):
         f.write(f"{fid}\t{iid}\t{y:.6f}\n")
-        shifted = y + (0.15 if idx % 2 == 0 else -0.10)
+        shifted = y2 if y2 is not None else y + (0.15 if idx % 2 == 0 else -0.10)
         f.write(f"{fid}\t{iid}\t{shifted:.6f}\n")
 PY
 
@@ -180,7 +198,7 @@ from pathlib import Path
 
 def check_run(base_str, expected_mode, extra_required=None):
     base = Path(base_str)
-    assoc = base.with_suffix(".assoc.txt")
+    assoc = Path(str(base) + ".assoc.txt")
     nullf = Path(str(base) + ".repeatability.null.txt")
     if not assoc.exists():
         raise SystemExit(f"Missing assoc output file: {assoc}")

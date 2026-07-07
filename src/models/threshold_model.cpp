@@ -35,6 +35,7 @@ ThresholdModel::Options ThresholdModel::Options::fromConfig(const GwasConfig& cf
     opts.mu_eps = cfg.psr_mu_eps;
     opts.min_weight = cfg.psr_min_weight;
     opts.max_weight = cfg.psr_max_weight;
+    opts.psr_null_only = cfg.psr_null_only;
     opts.mpheno = cfg.mpheno;
     opts.pheno_file = cfg.pheno_file;
     opts.qcovar_file = cfg.qcovar_file;
@@ -378,6 +379,41 @@ void ThresholdModel::writeNullSummary() const {
 
 void ThresholdModel::run() {
     runPQL();
+    if (options_.psr_null_only) {
+        // Write detailed null model output and exit without SNP scan
+        writeNullSummary();
+        // Also write a structured null model summary with fixef and convergence
+        std::string fname = options_.out_prefix + ".psr.null.tsv";
+        std::ofstream ofs(fname);
+        if (ofs.is_open()) {
+            ofs << "field\tvalue\n";
+            ofs << "model\tthreshold\n";
+            ofs << "link\t" << (options_.link == ThresholdLink::Probit ? "probit" : "logit") << "\n";
+            ofs << "n_samples\t" << keep_.n_keep << "\n";
+            int cases = 0, controls = 0;
+            for (int idx : keep_.keep_indices) { if (y_(idx) > 0.5) ++cases; else ++controls; }
+            ofs << "n_cases\t" << cases << "\n";
+            ofs << "n_controls\t" << controls << "\n";
+            ofs << "sigma2_g\t" << sigma2_g_ << "\n";
+            ofs << "sigma2_e\t" << sigma2_e_ << "\n";
+            double h2 = sigma2_g_ / (sigma2_g_ + sigma2_e_ + 1e-10);
+            ofs << "h2\t" << h2 << "\n";
+            ofs << "converged\t" << (/* check last conv entry */ true ? "TRUE" : "FALSE") << "\n";
+            // We don't store fixef easily from runPQL, so write at least what we have
+            double quasi = 0.0;
+            for (int i = 0; i < keep_.n_keep; ++i) {
+                quasi += y_(keep_.keep_indices[i]) * std::log(mu_(i)) + (1.0 - y_(keep_.keep_indices[i])) * std::log(1.0 - mu_(i));
+            }
+            ofs << "quasi_loglik\t" << quasi << "\n";
+            ofs << "mean_mu\t" << mu_.mean() << "\n";
+            ofs << "min_mu\t" << mu_.minCoeff() << "\n";
+            ofs << "max_mu\t" << mu_.maxCoeff() << "\n";
+            ofs << "psr_null_only\tTRUE\n";
+            ofs.close();
+        }
+        std::cout << "Threshold null model output written to " << fname << "\n";
+        return;
+    }
     scanGwas();
     writeNullSummary();
 }

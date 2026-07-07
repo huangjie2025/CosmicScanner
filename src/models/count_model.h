@@ -27,6 +27,7 @@ public:
         int n_threads = 1;
         bool no_loco = false;
         bool fast_lmm = false;
+        bool psr_null_only = false;
         bool use_spa = false;
         CountFamily family = CountFamily::Poisson;
         bool estimate_overdispersion = false;

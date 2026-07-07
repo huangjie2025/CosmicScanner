@@ -51,6 +51,7 @@ OrdinalModel::Options OrdinalModel::Options::fromConfig(const GwasConfig& cfg) {
     opts.ordinal_vc_grid_points = cfg.ordinal_vc_grid_points;
     opts.ordinal_allow_fallback = cfg.ordinal_allow_fallback;
     opts.ordinal_test = cfg.ordinal_test;
+    opts.psr_null_only = cfg.psr_null_only;
     opts.pheno_file = cfg.pheno_file;
     opts.ordinal_file = cfg.ordinal_file;
     opts.qcovar_file = cfg.qcovar_file;
@@ -713,6 +714,66 @@ void OrdinalModel::runStackedPsr() {
         Py = yw_scaled - Xw_scaled * (XtVinvX_inv * XtViny_fixed);
     }
 
+    // 6a. psr-null-only: output null model and exit without SNP scan
+    if (options_.psr_null_only) {
+        std::string null_path = options_.out_prefix + ".psr.null.tsv";
+        std::ofstream null_ofs(null_path);
+        if (!null_ofs.is_open()) throw std::runtime_error("Cannot write " + null_path);
+        null_ofs << "field\tvalue\n";
+        null_ofs << "model\tordinal_stacked_psr\n";
+        null_ofs << "ordinal_engine\t" << engine_label << "\n";
+        null_ofs << "ordinal_vc_method\t" << vc_method << "\n";
+        null_ofs << "vc_update\t" << (vc_update ? "TRUE" : "FALSE") << "\n";
+        null_ofs << "sigma2_g\t" << sigma2_g << "\n";
+        null_ofs << "n_levels\t" << C << "\n";
+        null_ofs << "n_thresholds\t" << n_thresh << "\n";
+        null_ofs << "n_stacked\t" << N << "\n";
+        null_ofs << "n_individuals\t" << n << "\n";
+        null_ofs << "converged\t" << (converged ? "TRUE" : "FALSE") << "\n";
+        null_ofs << "pql_iterations\t" << conv_rows.size() << "\n";
+        // Write threshold intercepts
+        for (int k = 0; k < n_thresh; ++k) {
+            null_ofs << "threshold_" << (k + 1) << "\t" << beta_hat(k) << "\n";
+        }
+        // Write covariate fixed effects
+        if (has_covariates_) {
+            int n_cov = X_covariates_.cols();
+            for (int c = 0; c < n_cov; ++c) {
+                null_ofs << "covariate_" << (c + 1) << "\t" << beta_hat(n_thresh + c) << "\n";
+            }
+        }
+        // Write quasi-likelihood (last iteration from conv_rows)
+        if (!conv_rows.empty()) {
+            auto& last = conv_rows.back();
+            std::stringstream ss(last);
+            std::string tok;
+            for (int col = 0; col <= 3; ++col) {
+                if (!std::getline(ss, tok, '\t')) break;
+                if (col == 3) null_ofs << "quasi_loglik\t" << tok << "\n";
+            }
+        }
+        null_ofs << "mean_mu\t" << mu.mean() << "\n";
+        null_ofs << "min_mu\t" << mu.minCoeff() << "\n";
+        null_ofs << "max_mu\t" << mu.maxCoeff() << "\n";
+        null_ofs << "psr_null_only\tTRUE\n";
+        null_ofs.close();
+        std::cout << "Stacked PSR null model output written to " << null_path << "\n";
+
+        // BLUP output (dense-zkz only)
+        if (use_dense && converged) {
+            Eigen::VectorXd resid = y_tilde - X * beta_hat;
+            Eigen::VectorXd Vinv_resid = ldlt_V.solve(resid);
+            Eigen::VectorXd z_vinv_resid = Eigen::VectorXd::Zero(n);
+            for (int r = 0; r < N; ++r) {
+                z_vinv_resid(row2indiv(r)) += Vinv_resid(r);
+            }
+            Eigen::VectorXd u_hat = sigma2_g * G.selfadjointView<Eigen::Lower>() * z_vinv_resid;
+            Eigen::VectorXd sigma2_g_vec = Eigen::VectorXd::Constant(n, sigma2_g);
+            writeStackedBlup(u_hat, sigma2_g_vec);
+        }
+        return;
+    }
+
     // 6b. Score test precomputation
     z_stack_ = z;
     mu_ = mu;
@@ -1000,8 +1061,12 @@ void OrdinalModel::run() {
             runStackedPsr();
             auto end = std::chrono::steady_clock::now();
             double runtime = std::chrono::duration<double>(end - start).count();
-            std::cout << "Ordinal PSR-GWAS stacked-psr results written to "
-                      << options_.out_prefix << ".gwas.tsv (runtime=" << runtime << "s)\n";
+            if (options_.psr_null_only) {
+                std::cout << "Stacked PSR null model output (no GWAS scan, runtime=" << runtime << "s)\n";
+            } else {
+                std::cout << "Ordinal PSR-GWAS stacked-psr results written to "
+                          << options_.out_prefix << ".gwas.tsv (runtime=" << runtime << "s)\n";
+            }
             return;
         } catch (const std::exception& e) {
             if (options_.ordinal_allow_fallback) {
@@ -1041,6 +1106,7 @@ void OrdinalModel::run() {
         opts.max_weight = options_.max_weight;
         opts.reml_maxit = options_.reml_maxit;
         opts.reml_tol = options_.reml_tol;
+        opts.psr_null_only = options_.psr_null_only;
         opts.mpheno = 1;
         opts.pheno_file = pheno;
         opts.qcovar_file = options_.qcovar_file;
@@ -1055,11 +1121,16 @@ void OrdinalModel::run() {
     }
     auto end = std::chrono::steady_clock::now();
     double runtime = std::chrono::duration<double>(end - start).count();
-    writeCombinedConvergence(threshold_prefixes);
-    writeCombinedGwas(threshold_prefixes, runtime);
-    std::cout << "Ordinal PSR-GWAS "
-              << (fallback_used ? "stacked-psr (fallback) " : "experimental cumulative-binary ")
-              << "results written to " << options_.out_prefix << ".gwas.tsv\n";
+    if (options_.psr_null_only) {
+        std::cout << "Ordinal PSR-GWAS cumulative-binary null model outputs written ("
+                  << (levels_.size() - 1) << " thresholds).\n";
+    } else {
+        writeCombinedConvergence(threshold_prefixes);
+        writeCombinedGwas(threshold_prefixes, runtime);
+        std::cout << "Ordinal PSR-GWAS "
+                  << (fallback_used ? "stacked-psr (fallback) " : "experimental cumulative-binary ")
+                  << "results written to " << options_.out_prefix << ".gwas.tsv\n";
+    }
 }
 
 } // namespace cosmic
