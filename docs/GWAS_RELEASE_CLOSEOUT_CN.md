@@ -59,7 +59,8 @@ cmake --build build --target check_gemma_all -j8
 | `bash tests/run_eb_gwas_suite.sh --full` | PASS | EB 单性状、重复力、多性状、validation matrix、LOCO、calibration、calibration grid、PGEN/BGEN consistency、performance 全部通过 |
 | `cmake --build build --target check_eb_gwas` | PASS | EB-GWAS CTest quick suite 通过 |
 | `cmake --build build --target check_eb_gwas_full` | PASS | EB-GWAS CMake full suite 通过 |
-| `ctest --test-dir build --output-on-failure` | PASS | CTest 4/4 通过：compat smoke、BSLMM2 reference、多性状 reference、EB-GWAS quick suite |
+| `cmake --build build --target check_ssgwas` | PASS | ssGWAS A22-corrected H⁻¹ smoke 通过 |
+| `ctest --test-dir build --output-on-failure` | PASS | CTest 5/5 通过：compat smoke、BSLMM2 reference、多性状 reference、EB-GWAS quick suite、ssGWAS A22 smoke |
 
 本轮同时修复了两个测试脚本的发布前可复现性问题：
 

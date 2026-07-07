@@ -263,11 +263,10 @@ def main():
             f.write(f"- {comparison}\n\n")
         f.write("## 结论\n\n")
         f.write("ssGWAS 在无亲缘 pedigree 和有亲缘 pedigree 下均成功运行并输出关联结果。\n")
-        f.write("**注意**：当前 ssGWAS 实现为 MVP，跳过了 A22 correction\n")
-        f.write("（H⁻¹ = A⁻¹ + G⁻¹ 而非标准 H⁻¹ = A⁻¹ + G⁻¹ - A22⁻¹），\n")
-        f.write("导致 VCE 估计的绝对值发散（尺度问题），但 SNP 效应方向与标准 LMM 一致。\n")
-        f.write("定性验证（运行成功、SNP 效应方向一致）已通过；\n")
-        f.write("定量 VCE 准确性待 A22 correction 实现后验证。\n")
+        f.write("当前实现使用标准 H⁻¹ 结构：A⁻¹ + [0, tau·G⁻¹ - omega·A22⁻¹]，\n")
+        f.write("null summary 会输出 A22 correction 与 H⁻¹ 对称性诊断。\n")
+        f.write("该验证覆盖 smoke、自洽运行和 SNP 效应方向一致性；\n")
+        f.write("外部 BLUPF90/POSTGSF90 reference benchmark 仍需作为发布后增强项补齐。\n")
     print(f"报告: {report_path}")
 
 

@@ -115,6 +115,23 @@ add_custom_target(check_eb_gwas_full
     USES_TERMINAL
 )
 
+add_test(
+    NAME ssgwas_a22_smoke
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_test_singlestep.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(ssgwas_a22_smoke PROPERTIES
+    ENVIRONMENT "COSMICSCANNER_BIN=$<TARGET_FILE:cosmicscanner>"
+    LABELS "ssgwas;gwas;smoke;validation"
+    TIMEOUT 120
+)
+
+add_custom_target(check_ssgwas
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_CURRENT_BINARY_DIR} -R ssgwas_a22_smoke --output-on-failure
+    DEPENDS cosmicscanner
+    USES_TERMINAL
+)
+
 add_executable(test_sparse_reml tests/test_sparse_reml.cpp)
 target_link_libraries(test_sparse_reml PRIVATE CosmicCommon)
 

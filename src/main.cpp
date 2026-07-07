@@ -257,10 +257,10 @@ void print_usage(const char* prog_name) {
     cout << "       direct-maternal covariance (adm), PE (c), residual (e)\n";
     cout << "  Scan uses effective VCs: Vg=ad+am+(c) with LOCO GRM.\n";
     cout << "\n--- Single-Step GWAS (ssGWAS) Model ---\n";
-    cout << "  --single-step          ssGWAS with pedigree + genomic H matrix\n";
+    cout << "  --single-step          ssGWAS with A22-corrected pedigree + genomic H matrix\n";
     cout << "  --ped <file>           Pedigree: ID SIRE DAM (no header)\n";
     cout << "  --genotyped-list <f>   File listing genotyped individual IDs\n";
-    cout << "  --write-ebv            Output GEBV estimates\n";
+    cout << "  --write-ebv            Reserved GEBV output switch (not stable in v1.0)\n";
     cout << "  --h2-tau <f>          Tau scaling for A22 blend (default: 1.0)\n";
     cout << "  --h2-omega <f>        Omega scaling for A22 blend (default: 1.0)\n";
     cout << "  --blend-g <f>         G blend weight with I (default: 0.05)\n";

@@ -29,6 +29,28 @@ std::unordered_set<std::string> loadSnpIdSet(const std::string& path) {
     return ids;
 }
 
+Eigen::MatrixXd invertSpdWithRidge(const Eigen::MatrixXd& matrix,
+                                   const std::string& label,
+                                   double ridge = 1e-8) {
+    if (matrix.rows() != matrix.cols()) {
+        throw std::runtime_error(label + " must be square.");
+    }
+    Eigen::MatrixXd sym = 0.5 * (matrix + matrix.transpose());
+    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(sym.rows(), sym.cols());
+    for (int attempt = 0; attempt < 6; ++attempt) {
+        Eigen::LDLT<Eigen::MatrixXd> ldlt(sym + ridge * I);
+        if (ldlt.info() == Eigen::Success && ldlt.isPositive()) {
+            return ldlt.solve(I);
+        }
+        ridge *= 10.0;
+    }
+    Eigen::FullPivLU<Eigen::MatrixXd> lu(sym + ridge * I);
+    if (!lu.isInvertible()) {
+        throw std::runtime_error("Cannot invert " + label + " for ssGWAS H-inverse construction.");
+    }
+    return lu.inverse();
+}
+
 } // anonymous namespace
 
 namespace cosmic {
@@ -234,77 +256,104 @@ void SingleStepModel::buildGRM() {
 }
 
 void SingleStepModel::computeA22() {
-    std::cout << "A22 correction will be fully implemented in v1.1.\n";
-    std::cout << "MVP: skipping A22 correction, using G⁻¹ + A⁻¹ block structure.\n";
+    if (n_genotyped_ <= 0) {
+        has_a22_correction_ = false;
+        A22_inv_.resize(0, 0);
+        return;
+    }
+    if ((int)genotyped_indices_.size() != n_genotyped_) {
+        throw std::runtime_error("ssGWAS A22 correction requires genotyped ID count to match GRM dimension.");
+    }
+
+    Eigen::MatrixXd A_dense = invertSpdWithRidge(Eigen::MatrixXd(A_inv_), "pedigree A-inverse");
+    Eigen::MatrixXd A22(n_genotyped_, n_genotyped_);
+    for (int i = 0; i < n_genotyped_; ++i) {
+        int pi = genotyped_indices_[i];
+        if (pi < 0 || pi >= A_dense.rows()) {
+            throw std::runtime_error("Genotyped individual index is outside the pedigree matrix.");
+        }
+        for (int j = 0; j < n_genotyped_; ++j) {
+            int pj = genotyped_indices_[j];
+            A22(i, j) = A_dense(pi, pj);
+        }
+    }
+
+    A22_inv_ = invertSpdWithRidge(A22, "pedigree A22");
+    has_a22_correction_ = true;
+    std::cout << "A22 correction enabled for " << n_genotyped_
+              << " genotyped individuals (tau=" << options_.h_tau
+              << ", omega=" << options_.h_omega << ").\n";
 }
 
 void SingleStepModel::computeHInverse() {
-    int n_total = (int)pedigree_.size();
     H_inv_ = A_inv_;
 
     if (n_genotyped_ > 0) {
-        Eigen::MatrixXd Ginv = G_.inverse();
+        Eigen::MatrixXd Ginv = invertSpdWithRidge(G_, "genomic relationship G");
+        if (!has_a22_correction_ || A22_inv_.rows() != n_genotyped_) {
+            throw std::runtime_error("ssGWAS H-inverse construction requires A22 correction.");
+        }
         for (int gi = 0; gi < n_genotyped_; ++gi) {
             int idx_i = genotyped_indices_[gi];
             for (int gj = 0; gj < n_genotyped_; ++gj) {
                 int idx_j = genotyped_indices_[gj];
-                H_inv_.coeffRef(idx_i, idx_j) += Ginv(gi, gj);
+                H_inv_.coeffRef(idx_i, idx_j) += options_.h_tau * Ginv(gi, gj)
+                                               - options_.h_omega * A22_inv_(gi, gj);
             }
         }
     }
+    H_inv_ = 0.5 * (H_inv_ + Eigen::SparseMatrix<double>(H_inv_.transpose()));
+    Eigen::MatrixXd H_dense = Eigen::MatrixXd(H_inv_);
+    h_inverse_symmetry_error_ = (H_dense - H_dense.transpose()).cwiseAbs().maxCoeff();
 
-    std::cout << "H⁻¹ constructed. Size: " << H_inv_.rows() << "x" << H_inv_.cols() << "\n";
+    std::cout << "Standard ssGWAS H⁻¹ constructed: A⁻¹ + [0, tau*G⁻¹ - omega*A22⁻¹]. "
+              << "Size: " << H_inv_.rows() << "x" << H_inv_.cols()
+              << ", symmetry max error=" << h_inverse_symmetry_error_ << "\n";
 }
 
 void SingleStepModel::runVCE() {
-    std::cout << "Running ssGWAS VCE...\n";
+    std::cout << "Running ssGWAS VCE with Eigen REML on the genotyped H subset...\n";
 
-    int n = keep_.n_keep;
-    int n_ped = (int)pedigree_.size();
-    Eigen::MatrixXd X_mat = X_.cast<double>();
-    Eigen::VectorXd y_adj = y_;
-
-    Eigen::MatrixXd M = Eigen::MatrixXd::Identity(n, n) - X_mat * (X_mat.transpose() * X_mat).ldlt().solve(X_mat.transpose());
-    Eigen::VectorXd y_proj = M * y_adj;
-
-    double vy = y_proj.squaredNorm() / (n - X_mat.cols());
-    sigma2_g_ = vy * 0.5;
-    sigma2_e_ = vy * 0.5;
-
-    for (int iter = 0; iter < 20; ++iter) {
-        Eigen::MatrixXd H_dense = Eigen::MatrixXd(H_inv_);
-        Eigen::MatrixXd H = H_dense.inverse();
-
-        // Using the genotyped subset for VCE
-        int ng = n_genotyped_;
-        if (ng == 0) ng = n;
-        Eigen::MatrixXd G_sub = H.topLeftCorner(ng, ng);
-
-        Eigen::MatrixXd V = sigma2_g_ * G_sub + sigma2_e_ * Eigen::MatrixXd::Identity(ng, ng);
-        Eigen::MatrixXd Vinv = V.ldlt().solve(Eigen::MatrixXd::Identity(ng, ng));
-
-        double tr_PG = (Vinv * G_sub).trace();
-        Eigen::VectorXd yg = y_adj.head(ng);
-        Eigen::VectorXd t = Vinv * yg;
-        double yPGy = t.dot(G_sub * t);
-
-        double grad_g = -0.5 * tr_PG + 0.5 * yPGy;
-        double grad_e = -0.5 * (double)ng + 0.5 * y_adj.head(ng).dot(Vinv * y_adj.head(ng));
-
-        double step = 0.3;
-        sigma2_g_ += step * grad_g;
-        sigma2_e_ += step * grad_e;
-
-        if (sigma2_g_ < 1e-6) sigma2_g_ = 1e-6;
-        if (sigma2_e_ < 1e-6) sigma2_e_ = 1e-6;
-
-        if (iter % 5 == 0) {
-            std::cout << "ssVCE iter " << iter << ": Vg=" << sigma2_g_
-                      << " Ve=" << sigma2_e_ << "\n";
-        }
+    int ng = n_genotyped_;
+    if (ng <= 0) throw std::runtime_error("ssGWAS VCE requires at least one genotyped individual.");
+    if (ng != keep_.n_keep) {
+        throw std::runtime_error("Current ssGWAS VCE requires the genotyped-list order to match the filtered genotype sample set.");
     }
 
-    std::cout << "Final ssVCE: Vg=" << sigma2_g_ << " Ve=" << sigma2_e_ << "\n";
+    Eigen::MatrixXd H_dense = invertSpdWithRidge(Eigen::MatrixXd(H_inv_), "ssGWAS H-inverse");
+    Eigen::MatrixXd H_sub(ng, ng);
+    for (int i = 0; i < ng; ++i) {
+        int pi = genotyped_indices_[i];
+        for (int j = 0; j < ng; ++j) {
+            int pj = genotyped_indices_[j];
+            H_sub(i, j) = H_dense(pi, pj);
+        }
+    }
+    H_sub = 0.5 * (H_sub + H_sub.transpose());
+
+    Eigen::VectorXd y_sub = DataFilter::subset(y_, keep_);
+    Eigen::MatrixXf X_sub = DataFilter::subsetRows(X_, keep_);
+
+    EigenVce::Options vce_opts;
+    vce_opts.use_covariate_projection = true;
+    vce_opts.max_iter = options_.reml_maxit;
+    vce_opts.tol = options_.reml_tol;
+    EigenVce vce(vce_opts);
+    vce.prepare(y_sub, X_sub, H_sub);
+    bool ok = vce.runNullModel();
+    if (!ok) {
+        throw std::runtime_error("ssGWAS Eigen REML null model did not converge.");
+    }
+    sigma2_g_ = vce.getSigma2g();
+    sigma2_e_ = vce.getSigma2e();
+
+    if (!std::isfinite(sigma2_g_) || !std::isfinite(sigma2_e_) ||
+        sigma2_g_ < 0.0 || sigma2_e_ < 0.0) {
+        throw std::runtime_error("ssGWAS Eigen REML produced invalid variance components.");
+    }
+
+    std::cout << "Final ssGWAS VCE: Vg=" << sigma2_g_ << " Ve=" << sigma2_e_
+              << " h2=" << sigma2_g_ / (sigma2_g_ + sigma2_e_ + 1e-10) << "\n";
 }
 
 void SingleStepModel::scanGwas() {
@@ -461,9 +510,12 @@ void SingleStepModel::writeNullSummary() const {
         std::cerr << "Warning: cannot write " << fname << "\n";
         return;
     }
-    ofs << "sigma2_g\tsigma2_e\th2\n";
+    ofs << "sigma2_g\tsigma2_e\th2\ta22_correction\th_tau\th_omega\thinv_symmetry_max_abs\n";
     double h2 = sigma2_g_ / (sigma2_g_ + sigma2_e_ + 1e-10);
-    ofs << sigma2_g_ << "\t" << sigma2_e_ << "\t" << h2 << "\n";
+    ofs << sigma2_g_ << "\t" << sigma2_e_ << "\t" << h2 << "\t"
+        << (has_a22_correction_ ? 1 : 0) << "\t"
+        << options_.h_tau << "\t" << options_.h_omega << "\t"
+        << h_inverse_symmetry_error_ << "\n";
     ofs.close();
     std::cout << "ssGWAS null model summary written to " << fname << "\n";
 }

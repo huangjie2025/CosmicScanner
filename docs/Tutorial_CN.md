@@ -617,7 +617,7 @@ IND003 IND003 DAM002    1.42
 
 ### 6.6 单步 ssGWAS
 
-通过 H⁻¹ 矩阵联合系谱与基因组信息，支持无基因型个体的关联分析：
+通过标准 A22-corrected H⁻¹ 矩阵联合系谱与基因组信息，支持系谱-基因组联合关联扫描：
 
 ```bash
 ./cosmicscanner \
@@ -626,7 +626,6 @@ IND003 IND003 DAM002    1.42
   --single-step \
   --ped data/pedigree.txt \
   --genotyped-list data/genotyped_ids.txt \
-  --write-ebv \
   --gwas \
   --out results/ssgwas_out
 ```
@@ -646,12 +645,12 @@ IND002   SIRE001  DAM002
 | `--single-step` | 开启 ssGWAS 模型 | — |
 | `--ped <file>` | 系谱文件：`ID SIRE DAM` | — |
 | `--genotyped-list <file>` | 有基因型个体 ID 列表 | — |
-| `--write-ebv` | 输出 GEBV 估计值 | 关闭 |
+| `--write-ebv` | GEBV 输出预留开关，v1.0 不作为稳定输出承诺 | 关闭 |
 | `--h2-tau <f>` | A22 混合的 Tau 缩放 | 1.0 |
 | `--h2-omega <f>` | A22 混合的 Omega 缩放 | 1.0 |
 | `--blend-g <f>` | G 与 I 的混合权重 | 0.05 |
 
-**输出文件**：`*.assoc.txt`（+ GEBV 文件如启用 `--write-ebv`）
+**输出文件**：`*.assoc.txt` 和 `*_ssgwas_null.txt`。null summary 包含 `a22_correction`、`h_tau`、`h_omega` 和 H⁻¹ 对称性诊断。
 
 ### 6.7 阈值/Probit 模型 GWAS
 
@@ -1163,7 +1162,7 @@ GEMMA-full 模式额外输出 LRT、Score 列。
 | `--single-step` | 开启 ssGWAS | — |
 | `--ped <file>` | 系谱文件 `ID SIRE DAM` | — |
 | `--genotyped-list <file>` | 有基因型 ID 列表 | — |
-| `--write-ebv` | 输出 GEBV | 关闭 |
+| `--write-ebv` | GEBV 输出预留开关，v1.0 不作为稳定输出承诺 | 关闭 |
 | `--h2-tau <f>` | Tau 缩放 | 1.0 |
 | `--h2-omega <f>` | Omega 缩放 | 1.0 |
 | `--blend-g <f>` | G 与 I 混合权重 | 0.05 |

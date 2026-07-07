@@ -519,10 +519,11 @@ For the native EMmvGWAS two-step workflow, use `--emmvgwas-vc-only` for `vc_esti
   --single-step \
   --ped data/pedigree.txt \
   --genotyped-list data/genotyped_ids.txt \
-  --write-ebv \
   --gwas \
   --out results/ssgwas_out
 ```
+
+This route uses the standard A22-corrected H⁻¹ block for pedigree-genomic joint association scanning.
 
 **Pedigree format** (`--ped`, no header): `ID SIRE DAM`
 
@@ -533,12 +534,12 @@ For the native EMmvGWAS two-step workflow, use `--emmvgwas-vc-only` for `vc_esti
 | `--single-step` | Enable ssGWAS | — |
 | `--ped <file>` | Pedigree file | — |
 | `--genotyped-list <file>` | Genotyped individual ID list | — |
-| `--write-ebv` | Output GEBV estimates | Off |
+| `--write-ebv` | Reserved GEBV output switch; not a stable v1.0 output contract | Off |
 | `--h2-tau <f>` | Tau scaling for A22 blend | 1.0 |
 | `--h2-omega <f>` | Omega scaling | 1.0 |
 | `--blend-g <f>` | G blend weight with I | 0.05 |
 
-**Output**: `*.assoc.txt` (+ GEBV file if `--write-ebv`)
+**Output**: `*.assoc.txt` and `*_ssgwas_null.txt`. The null summary reports `a22_correction`, `h_tau`, `h_omega`, and H⁻¹ symmetry diagnostics.
 
 ### 6.7 Threshold/Probit Model GWAS
 
@@ -1008,7 +1009,7 @@ Add `--out-ssf` to output EBI GWAS-SSF standard format.
 | `--single-step` | Enable ssGWAS | — |
 | `--ped <file>` | Pedigree file `ID SIRE DAM` | — |
 | `--genotyped-list <file>` | Genotyped ID list | — |
-| `--write-ebv` | Output GEBV | Off |
+| `--write-ebv` | Reserved GEBV output switch; not a stable v1.0 output contract | Off |
 | `--h2-tau <f>` | Tau scaling | 1.0 |
 | `--h2-omega <f>` | Omega scaling | 1.0 |
 | `--blend-g <f>` | G blend weight with I | 0.05 |

@@ -181,6 +181,7 @@ python3 tools/plot_rrm_dynamic.py \
 - `cmake --build build --target check_gemma_all`：聚合运行 GEMMA/EMmvGWAS 兼容 smoke、GEMMA BSLMM2 reference 和多性状 GEMMA/EMmvGWAS reference validation。
 - `cmake --build build --target check_eb_gwas`：运行 EB-GWAS quick suite，覆盖单性状、重复力、多性状 EB smoke、validation matrix 和 standard-vs-EB report。
 - `cmake --build build --target check_eb_gwas_full`：运行 EB-GWAS full suite，额外覆盖 LOCO、calibration、calibration grid、PGEN/BGEN consistency 和 performance benchmark。
+- `cmake --build build --target check_ssgwas`：运行 ssGWAS A22-corrected H⁻¹ smoke，检查 `--single-step --ped --genotyped-list`、null summary、A22 correction 标记和 H⁻¹ 对称性诊断。
 - `docs/GEMMA_EMMVGWAS_COSMICSCANNER_SUPPORT_MATRIX_CN.md`：GEMMA、EMmvGWAS 与 CosmicScanner 三方功能支撑矩阵，明确完全支持、兼容支持、近似支持和条件验证边界。
 
 方法说明：

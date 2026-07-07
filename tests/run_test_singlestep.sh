@@ -9,7 +9,7 @@ RESULT_DIR="${ROOT}/tests/results/singlestep_smoke"
 DATA_DIR="${ROOT}/tests/data/gemma_accuracy"
 DATA_PREFIX="${DATA_DIR}/gemma_accuracy"
 OUT_PREFIX="${RESULT_DIR}/singlestep_smoke"
-BIN="${ROOT}/build/cosmicscanner"
+BIN="${COSMICSCANNER_BIN:-${ROOT}/build/cosmicscanner}"
 
 mkdir -p "${RESULT_DIR}"
 
@@ -38,8 +38,12 @@ if [ ! -f "${NULL_FILE}" ]; then
   exit 1
 fi
 HEADER=$(head -1 "${NULL_FILE}")
-if [ "${HEADER}" != "sigma2_g	sigma2_e	h2" ]; then
+if [ "${HEADER}" != "sigma2_g	sigma2_e	h2	a22_correction	h_tau	h_omega	hinv_symmetry_max_abs" ]; then
   echo "FAIL: unexpected header in ${NULL_FILE}: ${HEADER}"
+  exit 1
+fi
+if ! awk 'NR==2 {exit !($4 == 1 && $7 < 1e-8)}' "${NULL_FILE}"; then
+  echo "FAIL: A22 correction diagnostics failed in ${NULL_FILE}"
   exit 1
 fi
 

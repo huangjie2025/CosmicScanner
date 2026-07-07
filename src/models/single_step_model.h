@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include "config.h"
@@ -81,8 +82,11 @@ private:
 
     // GRM for genotyped individuals
     Eigen::MatrixXd G_;
+    Eigen::MatrixXd A22_inv_;
     int n_genotyped_ = 0;
     std::vector<int> genotyped_indices_;
+    bool has_a22_correction_ = false;
+    double h_inverse_symmetry_error_ = 0.0;
 
     // H⁻¹ = A⁻¹ + correction
     Eigen::SparseMatrix<double> H_inv_;
