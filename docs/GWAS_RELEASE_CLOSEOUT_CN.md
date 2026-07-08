@@ -1,6 +1,8 @@
 # GWAS 板块收口验收记录
 
-日期：2026-07-07
+日期：2026-07-08
+
+状态：发布前阻断项已清理。当前代码可以构建，核心 smoke/reference/unit 测试已纳入 CTest 门禁，CosmicGWAS 可以按稳定板块发布；外部 reference 和近似/interface 路线仍按各自方法边界说明。
 
 ## 1. 收口范围
 
@@ -20,8 +22,7 @@
 
 ```bash
 cmake --build build --target cosmicscanner -j4
-ctest --test-dir build -R gemma_emmvgwas_compat_smoke --output-on-failure
-bash tests/run_gwas_core_regression.sh --compat-smoke-only
+ctest --test-dir build --output-on-failure
 ```
 
 扩展本地验收：
@@ -45,29 +46,33 @@ cmake --build build --target check_gemma_all -j8
 
 ## 3. 本轮实际验收结果
 
-2026-07-07 在 `/disk228/huangjie/PanOmics/CosmicScanner` 完成以下验收：
+2026-07-08 在 `/disk228/huangjie/PanOmics/CosmicScanner` 完成以下发布前代码修复：
+
+| 文件 | 处理结果 | 发布影响 |
+|---|---|---|
+| `src/models/repeatability_model.cpp` | 移除 `curl`/`std::system` 调试上报，保留本地 `std::cerr` 诊断 | 消除发布包中的外部调试上报和 shell 调用风险 |
+| `src/models/repeatability_scan_exact.cpp` | 移除 `curl`/`std::system` 调试上报，失败时输出本地诊断 | 消除发布包中的外部调试上报和 shell 调用风险 |
+| `src/gwas_app.cpp`、`CMakeLists.txt` | 通过 `COSMICSCANNER_VERSION` 输出 CMake 项目版本 | 程序日志版本与构建版本统一 |
+| `CMakeLists.txt` | 将 `test_sparse_reml`、`test_multi_vc`、`test_spa_accuracy`、`test_regenie`、`test_input_adaptation_units` 加入 `add_test` | 默认 CTest 门禁从 5 项扩展到 10 项 |
+| `src/lmm_engine.cpp` | PGEN biobank scan 增加 keep-index 子集到全样本向量的转换包装 | 修复过滤样本后 PGEN 矩阵乘法的维度/样本错配风险 |
+
+2026-07-07 至 2026-07-08 在 `/disk228/huangjie/PanOmics/CosmicScanner` 完成以下发布前代码阅读和最小验证：
 
 | 命令 | 结果 | 说明 |
 |---|---|---|
-| `cmake --build build --target cosmicscanner -j4` | PASS | 主程序构建通过 |
-| `ctest --test-dir build -R gemma_emmvgwas_compat_smoke --output-on-failure` | PASS | 本地 GEMMA/EMmvGWAS 兼容 smoke 通过 |
-| `bash tests/run_gwas_core_regression.sh --compat-smoke-only` | PASS | 脚本层兼容 smoke 通过 |
-| `bash tests/run_test_multivariate.sh` | PASS | 多性状 EMMV/GEMMA/GEMMA-full/hybrid smoke 通过 |
-| `bash tests/run_test_repeatability.sh` | PASS | repeatability exact/cache/LOCO/fast smoke 通过 |
-| `bash tests/run_repeatability_release_validation.sh` | PASS | repeatability smoke、edge cases、exact-vs-fast simulation smoke 通过 |
-| `bash tests/run_gwas_core_regression.sh --fast --with-psr` | PASS | EB smoke、多性状 smoke、GEMMA/EMmvGWAS validation、PSR smoke、ordinal dense-zkz validation 通过 |
-| `bash tests/run_eb_gwas_suite.sh --full` | PASS | EB 单性状、重复力、多性状、validation matrix、LOCO、calibration、calibration grid、PGEN/BGEN consistency、performance 全部通过 |
-| `cmake --build build --target check_eb_gwas` | PASS | EB-GWAS CTest quick suite 通过 |
-| `cmake --build build --target check_eb_gwas_full` | PASS | EB-GWAS CMake full suite 通过 |
-| `cmake --build build --target check_ssgwas` | PASS | ssGWAS A22-corrected H⁻¹ smoke 通过 |
-| `ctest --test-dir build --output-on-failure` | PASS | CTest 5/5 通过：compat smoke、BSLMM2 reference、多性状 reference、EB-GWAS quick suite、ssGWAS A22 smoke |
+| `git status --short` | PASS | 工作区进入评估前干净 |
+| `cmake --build build -j2` | PASS | 主程序和测试可执行文件构建通过 |
+| `ctest --test-dir build --output-on-failure` | PASS | 2026-07-07 CTest 5/5 通过：compat smoke、BSLMM reference、多性状 reference、EB-GWAS quick suite、ssGWAS A22 smoke |
+| `./build/test_sparse_reml` | PASS | Sparse REML 单元测试通过 |
+| `./build/test_multi_vc` | PASS | 多方差组分 null model 单元测试通过 |
+| `./build/test_spa_accuracy` | PASS | SPA 数值测试通过 |
+| `./build/test_regenie` | PASS | REGENIE Step 1 单元测试通过 |
+| `./build/test_input_adaptation_units` | PASS | 输入适配单元测试通过 |
 
-本轮同时修复了两个测试脚本的发布前可复现性问题：
+CTest 门禁说明：
 
-- `tests/run_test_multivariate.sh`：缺少 `examples/mouse_clean` 时自动使用 `tests/data/mv_eb_smoke` 内置 PLINK 数据。
-- `tests/run_test_repeatability.sh`：缺少 `examples/mouse_clean` 时自动使用 `tests/data/repeatability_eb_smoke` 内置 PLINK/long phenotype 数据。
-- 两个脚本均动态读取 `.fam` 样本数，并兼容当前测试数据的 5 列 `.bim` 格式。
-- repeatability smoke 的输出检查改为按输出前缀追加 `.assoc.txt`，避免 `Path.with_suffix()` 错误替换前缀后缀。
+- 2026-07-08 起，默认 CTest 包含 10 项：5 个 smoke/reference 测试 + 5 个核心单元测试。
+- `tests` 顶层仍保留大量扩展 benchmark/reference 脚本；这些脚本用于发布增强验收或条件 reference，不全部纳入默认快速门禁。
 
 条件 reference 说明：
 
@@ -77,6 +82,7 @@ cmake --build build --target check_gemma_all -j8
 
 ## 4. 发布表述边界
 
+- 标准 LM/LMM、GRM、GEMMA/EMmvGWAS 兼容 smoke 覆盖路径、EB-GWAS quick、ssGWAS smoke、SPA/REGENIE/Input adaptation 单元测试覆盖路径可以进入稳定发布说明。
 - `--bslmm 2` 是 deterministic ridge/GBLUP 路线，可作为 GEMMA-style BSLMM2 reference 覆盖功能表述。
 - `--bslmm 1/3/4/5` 是 GEMMA-style deterministic approximation/interface，不是 GEMMA 原始 MCMC BSLMM、probit MCMC 或 DAP exact engine。
 - EB-GWAS 默认路线已通过稳定验收，可作为标准 LMM/mvLMM/重复力 GWAS 的辅助信号增强路线；正式报告仍必须同时保留标准主结果。当前稳定范围包括单性状 EB-LMM、重复力 fast aggregated subject-level EB-LMM、多性状 summary-level EB shrinkage。exact record-level repeatability EB、full rank-q per-SNP multivariate EB refit 和 RRM EB-GWAS 仍属于后续增强。
@@ -86,7 +92,8 @@ cmake --build build --target check_gemma_all -j8
 - RRM dynamic GWAS 和 repeatability GWAS 是不同模型；RRM 用于动态轨迹和时间窗口，repeatability 用于重复记录总体效应。
 - `--rrm-loco-global-null` 是快速近似 LOCO，不替代默认逐染色体重估 null model 的 LOCO。
 - EMmvGWAS-compatible 路线可直接运行 CosmicScanner 原生实现；与 EMmvGWAS R 包的逐项 reference 需要满足 R 包和 socket 条件。
-
+- 输入适配层仍是 MVP。帮助信息中明确 `xlsx not in MVP`，发布说明应写成 csv/tsv/txt prepared-input 工具，不应写成完整 ETL/表格适配平台。
+- `--ordinal-model` 默认 cumulative-binary 路线仍带 experimental 标识，发布说明应要求报告 convergence、warning、fallback 和外部 baseline 复核。
 ## 5. 文档收口
 
 本轮统一后的主文档入口：

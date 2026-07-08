@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -24,23 +23,6 @@
 
 namespace cosmic {
 namespace {
-
-static std::string dbg_json_escape(std::string s) {
-    std::string out;
-    out.reserve(s.size() + 16);
-    for (char c : s) {
-        switch (c) {
-            case '\\': out += "\\\\"; break;
-            case '"': out += "\\\""; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            case '\'': out += " "; break;
-            default: out += c; break;
-        }
-    }
-    return out;
-}
 
 static std::string dbg_num(double x) {
     if (std::isnan(x)) return "null";
@@ -74,22 +56,6 @@ static std::pair<double, double> dbg_diag_minmax(const Eigen::MatrixBase<Derived
         mx = std::max(mx, v);
     }
     return {mn, mx};
-}
-
-static void dbg_report_event(const std::string& hypothesis_id,
-                             const std::string& location,
-                             const std::string& msg,
-                             const std::string& data_json) {
-    std::ostringstream payload;
-    payload << "{\"sessionId\":\"repeatability-woodbury\""
-            << ",\"runId\":\"pre-fix\""
-            << ",\"hypothesisId\":\"" << dbg_json_escape(hypothesis_id)
-            << "\",\"location\":\"" << dbg_json_escape(location)
-            << "\",\"msg\":\"" << dbg_json_escape(msg)
-            << "\",\"data\":" << data_json << "}";
-    std::string cmd = "curl -s -X POST 'http://127.0.0.1:7777/event' -H 'Content-Type: application/json' --data '"
-        + payload.str() + "' >/dev/null 2>&1";
-    (void)std::system(cmd.c_str());
 }
 
 static double gamma_q(double a, double x) {
@@ -499,8 +465,8 @@ void RepeatabilityModel::scanExact() {
                  << ",\"M_diag_min\":" << dbg_num(m_diag_min)
                  << ",\"M_diag_max\":" << dbg_num(m_diag_max)
                  << "}";
-            dbg_report_event("C", "repeatability_scan_exact.cpp:scanExact",
-                             "[DEBUG] repeatability woodbury factorization failure", data.str());
+            std::cerr << "Repeatability exact scan Woodbury factorization diagnostics: "
+                      << data.str() << std::endl;
             throw std::runtime_error("Repeatability GWAS failed to factorize Woodbury subject matrix.");
         }
         Eigen::MatrixXd Minv = m_solver.solve(Eigen::MatrixXd::Identity(n_subjects_keep, n_subjects_keep));

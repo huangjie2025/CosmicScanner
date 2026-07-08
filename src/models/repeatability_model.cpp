@@ -7,7 +7,6 @@
 #include "matrix_free_pcg.h"
 #include <iostream>
 #include <fstream>
-#include <cstdlib>
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -115,36 +114,6 @@ RepeatabilityModel::Options RepeatabilityModel::Options::fromConfig(const GwasCo
 
 namespace {
 
-// #region debug-point helper:repeatability-woodbury
-static std::string dbg_read_env_value(const std::string& file_path,
-                                      const std::string& key,
-                                      const std::string& fallback) {
-    std::ifstream ifs(file_path);
-    if (!ifs) return fallback;
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.rfind(key + "=", 0) == 0) return line.substr(key.size() + 1);
-    }
-    return fallback;
-}
-
-static std::string dbg_json_escape(std::string s) {
-    std::string out;
-    out.reserve(s.size() + 16);
-    for (char c : s) {
-        switch (c) {
-            case '\\': out += "\\\\"; break;
-            case '"': out += "\\\""; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            case '\'': out += " "; break;
-            default: out += c; break;
-        }
-    }
-    return out;
-}
-
 static std::string dbg_num(double x) {
     if (std::isnan(x)) return "null";
     if (!std::isfinite(x)) return (x > 0.0) ? "1e999" : "-1e999";
@@ -178,27 +147,6 @@ static std::pair<double, double> dbg_diag_minmax(const Eigen::MatrixBase<Derived
     }
     return {mn, mx};
 }
-
-static void dbg_report_event(const std::string& hypothesis_id,
-                             const std::string& location,
-                             const std::string& msg,
-                             const std::string& data_json) {
-    const std::string env_file = ".dbg/repeatability-woodbury.env";
-    const std::string server_url = dbg_read_env_value(env_file, "DEBUG_SERVER_URL", "http://127.0.0.1:7777/event");
-    const std::string session_id = dbg_read_env_value(env_file, "DEBUG_SESSION_ID", "repeatability-woodbury");
-    std::ostringstream payload;
-    payload << "{\"sessionId\":\"" << dbg_json_escape(session_id)
-            << "\",\"runId\":\"pre-fix\""
-            << ",\"hypothesisId\":\"" << dbg_json_escape(hypothesis_id)
-            << "\",\"location\":\"" << dbg_json_escape(location)
-            << "\",\"msg\":\"" << dbg_json_escape(msg)
-            << "\",\"data\":" << data_json << "}";
-    std::string cmd = "curl -s -X POST '" + server_url
-        + "' -H 'Content-Type: application/json' --data '"
-        + payload.str() + "' >/dev/null 2>&1";
-    (void)std::system(cmd.c_str());
-}
-// #endregion
 
 static int drop_aliased_fixed_effects(Eigen::MatrixXf& X, FixedDesignG& fd) {
     if (X.cols() <= 1) return 0;
@@ -527,10 +475,9 @@ void RepeatabilityModel::loadCovariates() {
              << ",\"x_nonfinite\":" << dbg_nonfinite_count(X_dbg)
              << ",\"y_nonfinite\":" << nonfinite_y
              << "}";
-        dbg_report_event("A", "repeatability_model.cpp:loadCovariates",
-                         "[DEBUG] repeatability design matrix summary", data.str());
+        std::cerr << "Repeatability design matrix diagnostics: "
+                  << data.str() << std::endl;
     }
-    // #endregion
 }
 
 void RepeatabilityModel::buildGRM() {
@@ -933,8 +880,8 @@ void RepeatabilityModel::runVCE() {
                          << ",\"diag_nonpos\":" << (int)((diag->array() <= 0.0).count());
                 }
                 data << "}";
-                dbg_report_event("B", "repeatability_model.cpp:fast_subject_logL",
-                                 "[DEBUG] repeatability subject VCE failure", data.str());
+                std::cerr << "Repeatability subject VCE diagnostics: "
+                          << data.str() << std::endl;
             };
             if (!(vg >= 0.0) || !(vpe >= 0.0) || !(ve > 0.0)) return -std::numeric_limits<double>::infinity();
 

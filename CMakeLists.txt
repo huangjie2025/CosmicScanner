@@ -29,6 +29,7 @@ target_include_directories(cosmicscanner PRIVATE
 )
 
 target_link_libraries(cosmicscanner PRIVATE CosmicCommon OpenMP::OpenMP_CXX)
+target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
 
 enable_testing()
 
@@ -134,17 +135,25 @@ add_custom_target(check_ssgwas
 
 add_executable(test_sparse_reml tests/test_sparse_reml.cpp)
 target_link_libraries(test_sparse_reml PRIVATE CosmicCommon)
+add_test(NAME sparse_reml_unit COMMAND test_sparse_reml)
+set_tests_properties(sparse_reml_unit PROPERTIES LABELS "unit;vce" TIMEOUT 60)
 
 add_executable(test_multi_vc tests/test_multi_vc.cpp)
 target_link_libraries(test_multi_vc PRIVATE CosmicCommon)
+add_test(NAME multi_vc_unit COMMAND test_multi_vc)
+set_tests_properties(multi_vc_unit PROPERTIES LABELS "unit;vce" TIMEOUT 60)
 
 add_executable(test_spa_accuracy tests/test_spa_accuracy.cpp src/spa_test.cpp)
 target_link_libraries(test_spa_accuracy CosmicCommon)
 target_include_directories(test_spa_accuracy PRIVATE src)
+add_test(NAME spa_accuracy_unit COMMAND test_spa_accuracy)
+set_tests_properties(spa_accuracy_unit PROPERTIES LABELS "unit;spa" TIMEOUT 60)
 
 add_executable(test_regenie tests/test_regenie.cpp src/ridge_regenie.cpp)
 target_link_libraries(test_regenie CosmicCommon)
 target_include_directories(test_regenie PRIVATE src)
+add_test(NAME regenie_unit COMMAND test_regenie)
+set_tests_properties(regenie_unit PROPERTIES LABELS "unit;regenie" TIMEOUT 60)
 
 add_executable(test_input_adaptation_units
     tests/test_input_adaptation_units.cpp
@@ -154,6 +163,8 @@ add_executable(test_input_adaptation_units
     src/input/wide_to_long.cpp
 )
 target_include_directories(test_input_adaptation_units PRIVATE src)
+add_test(NAME input_adaptation_unit COMMAND test_input_adaptation_units)
+set_tests_properties(input_adaptation_unit PROPERTIES LABELS "unit;input" TIMEOUT 60)
 
 add_executable(eval_repeatability_reml tools/eval_repeatability_reml.cpp)
 target_link_libraries(eval_repeatability_reml PRIVATE CosmicCommon)

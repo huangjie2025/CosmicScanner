@@ -386,6 +386,37 @@ void LmmEngine::scanBiobank(PgenReader& reader,
     if (keep_indices.size() != (size_t)n) throw std::runtime_error("Sample size mismatch in scanBiobank");
 
     std::cout << "Starting Biobank Scan (Matrix-Free PCG) on PGEN (" << m << " variants)..." << std::endl;
+    const int n_total = static_cast<int>(reader.getNumSamples());
+    for (int idx : keep_indices) {
+        if (idx < 0 || idx >= n_total) {
+            throw std::runtime_error("PGEN biobank keep index is out of range.");
+        }
+    }
+
+    auto expand_to_full_samples = [&](const Eigen::VectorXd& subset) {
+        Eigen::VectorXd full = Eigen::VectorXd::Zero(n_total);
+        for (int i = 0; i < n; ++i) full(keep_indices[i]) = subset(i);
+        return full;
+    };
+
+    auto subset_full_samples = [&](const Eigen::VectorXd& full) {
+        if (full.size() != n_total) throw std::runtime_error("PGEN biobank full-sample vector size mismatch.");
+        Eigen::VectorXd subset(n);
+        for (int i = 0; i < n; ++i) subset(i) = full(keep_indices[i]);
+        return subset;
+    };
+
+    auto multiply_Zt_keep = [&](const Eigen::VectorXd& v_subset, Eigen::VectorXd& out) {
+        Eigen::VectorXd v_full = expand_to_full_samples(v_subset);
+        reader.multiply_Zt_v(v_full, out, options.thread_num);
+    };
+
+    auto multiply_Z_keep = [&](const Eigen::VectorXd& marker_weights, Eigen::VectorXd& out_subset) {
+        Eigen::VectorXd out_full;
+        reader.multiply_Z_v(marker_weights, out_full, options.thread_num);
+        out_subset = subset_full_samples(out_full);
+    };
+
     // 2. Identify Unique Chromosomes and their variant indices
     std::vector<std::string> chroms;
     std::map<std::string, std::vector<size_t>> chrom_map;
@@ -420,10 +451,9 @@ void LmmEngine::scanBiobank(PgenReader& reader,
     double inv_M = 1.0 / (double)m;
     auto mult_op_global = [&](const Eigen::VectorXd& v_in, Eigen::VectorXd& v_out) {
         Eigen::VectorXd u(m);
-        // FIXME: PgenReader doesn't support keep_indices yet, assuming empty or implemented later
-        reader.multiply_Zt_v(v_in, u);
+        multiply_Zt_keep(v_in, u);
         Eigen::VectorXd w(n);
-        reader.multiply_Z_v(u, w);
+        multiply_Z_keep(u, w);
 
         // Project w onto null space of X
         // w_proj = M * w = w - Q * (Q' * w)
@@ -474,13 +504,13 @@ void LmmEngine::scanBiobank(PgenReader& reader,
         // Masked MultOp
         auto mult_op_loco = [&](const Eigen::VectorXd& v_in, Eigen::VectorXd& v_out) {
             Eigen::VectorXd u(m);
-            reader.multiply_Zt_v(v_in, u);
+            multiply_Zt_keep(v_in, u);
 
             // Mask out current chromosome
             for (size_t idx : indices) u(idx) = 0.0;
 
             Eigen::VectorXd w(n);
-            reader.multiply_Z_v(u, w);
+            multiply_Z_keep(u, w);
 
             // Re-scale?
             // The sum inside w is sum_{j not in c}.
@@ -524,7 +554,7 @@ void LmmEngine::scanBiobank(PgenReader& reader,
         // We can just extract relevant ones.
 
         Eigen::VectorXd scores(m);
-        reader.multiply_Zt_v(x_loco, scores);
+        multiply_Zt_keep(x_loco, scores);
 
         for(size_t idx : indices) {
             if (!options.extract_set.empty() && options.extract_set.find(vars[idx].id) == options.extract_set.end()) continue;

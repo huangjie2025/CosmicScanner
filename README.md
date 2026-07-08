@@ -4,6 +4,16 @@ CosmicScanner 是 Cosmic 基因组分析套件的全基因组关联分析（GWAS
 
 详细使用说明请参阅：**[CosmicScanner 中文教程](docs/Tutorial_CN.md)**
 
+## 发布状态
+
+当前代码基线已经完成发布前阻断项清理：repeatability 调试上报已移除，版本输出与 CMake 版本统一，核心单元测试已纳入 CTest，PGEN biobank keep-index 路径已增加子集适配。CosmicGWAS 可以按稳定板块发布，并保留以下功能边界：
+
+- 稳定发布：PLINK/BGEN/PGEN 基础读取、GRM 构建、单性状 LM/LMM、多性状 GWAS、重复力/RRM/ssGWAS/PSR/GxE 等 CosmicGWAS 模型入口，以及 GEMMA/EMmvGWAS 兼容 smoke 覆盖路径。
+- 条件发布：多性状 GEMMA reference、BSLMM reference、EMmvGWAS R reference 等依赖外部 GEMMA/R/EMmvGWAS 环境的路径；缺依赖时应记录为 skipped/blocked，而不是失败。
+- 明确近似/接口性质：EB-LMM 阈值调整、`--repeatability-mode stcg`、RRM 快速近似 LOCO、BSLMM 1/3/4/5 approximation/interface 需要按对应方法边界解释结果。
+
+发布前核查记录见：[docs/GWAS_RELEASE_CLOSEOUT_CN.md](docs/GWAS_RELEASE_CLOSEOUT_CN.md)。
+
 ## 核心功能
 
 *   **高性能数据读取**：
@@ -195,12 +205,12 @@ python3 tools/plot_rrm_dynamic.py \
 - [x] Exact LMM & Fast-LMM 扫描引擎
 - [x] LOCO 策略实现
 - [x] IDUL/AIDUL 加速 null 求解器 (`--lmm-null-solver brent|idul|idul_plus|aidul`)
-- [x] REGENIE 风格 Biobank 两步法 (`--biobank-mode`)
+- [x] REGENIE 风格 Biobank 两步法 (`--biobank-mode`)：PGEN keep-index 路径已增加子集适配。
 - [x] GEMMA-style eigen 工具（`--gemma-eigen`，输出 `.eigenD.txt/.eigenU.txt`）
 - [x] GEMMA-style summary-stat 工具（`--gs/-gs` 输出 `.S.txt/.size.txt/.snps.txt`，含 `--cat/--mcat/--wcat/--wsnp` 多 component S；`--gq/-gq --beta` 支持 `Z`、`BETA+SE`、`CHISQ` 或 `P`，输出 `.Vq.txt/.q.txt/.size.txt`；`--study/--ref` 和 `--mstudy/--mref --vc/--ci` 输出 summary VC/CI；`--beta/--cor --vc` 支持 GEMMA `.cor.txt` 直接 summary VC）
 - [x] GEMMA-style SNP correlation 工具（`--calccor --windowbp/--windowcm`，输出 `.cor.txt`）
 - [x] GEMMA-style variance component 工具（`--vc 1|2|3`，输出 `.vc.txt/.vc.summary.txt`）
-- [x] 输入适配层 MVP（csv/tsv/txt → prepared input，支持 repeatability/rrm/lmm/multivariate）
+- [~] 输入适配层 MVP（csv/tsv/txt → prepared input，支持 repeatability/rrm/lmm/multivariate）
 
 ### GWAS 模型套件（含 GEMMA/EMmvGWAS 兼容路线）
 - [x] GEMMA-style 普通线性模型 GWAS（`--lm --lm-mode 1|2|3|4`，对应 GEMMA `-lm` Wald/LRT/Score/all；输出 `.lm.assoc.txt`）
@@ -214,15 +224,15 @@ python3 tools/plot_rrm_dynamic.py \
 - [x] 单步 ssGWAS（`--single-step`，H⁻¹ 矩阵，系谱+基因组联合）
 - [x] 阈值/Probit 模型（`--threshold-model --link probit|logit`）
 - [x] 计数/二项 PSR-GWAS（`--count-model --family poisson|binomial`，PSR/PQL + weighted LMM）
-- [x] 序数 PSR-GWAS（`--ordinal-model`，cumulative-binary + stacked-psr，dense-zkz + grid-reml VC 估计）
+- [~] 序数 PSR-GWAS（`--ordinal-model`，cumulative-binary + stacked-psr，dense-zkz + grid-reml VC 估计；当前默认 cumulative-binary 仍按 experimental 口径发布）
 - [x] 生存 Cox 模型（`--survival-model`，Cox PH + 鞅残差 LMM）
 - [x] GxE 反应范数模型（`--gxe-model`，Vg0+Vg1 双 VC，2-df 联合 Wald）
 
 ### 检验与扩展
 - [x] 罕见变异检验（SKAT + Burden，beta 权重，混合卡方 p 值）
 - [x] SPA 鞍点近似（二元性状，CGF 求解）
-- [x] 经验贝叶斯 EB-GWAS（单性状/重复力/多性状稳定辅助路线）
-- [x] PSR-GWAS v0.5 序数 stacked-psr 落地（Wald/pseudo-score 校准通过）
+- [~] 经验贝叶斯 EB-GWAS（单性状/重复力/多性状辅助路线；正式报告应同时保留标准 LMM/mvLMM/repeatability 主结果）
+- [~] PSR-GWAS v0.5 序数 stacked-psr 落地（Wald/pseudo-score 校准通过；仍需按近似模型报告 convergence/warning）
 
 ### 当前开发焦点
 - PSR-GWAS v0.5 多分支整合收尾（大 N 校准、score test 诊断已完成）

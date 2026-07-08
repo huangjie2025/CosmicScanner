@@ -112,7 +112,10 @@ GwasApp::GwasApp(const GwasConfig& config) : cfg(config) {}
 int GwasApp::run() {
     try {
         auto start_time = chrono::high_resolution_clock::now();
-        cout << "CosmicScanner v0.1\n";
+        #ifndef COSMICSCANNER_VERSION
+        #define COSMICSCANNER_VERSION "unknown"
+        #endif
+        cout << "CosmicScanner v" << COSMICSCANNER_VERSION << "\n";
 
         PlinkReader plink_reader;
         BgenReader bgen_reader;
