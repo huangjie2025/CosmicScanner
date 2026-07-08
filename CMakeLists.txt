@@ -4,6 +4,7 @@ project(CosmicScanner VERSION 1.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(GNUInstallDirs)
+option(COSMICSCANNER_BUILD_TESTS "Build CosmicScanner test targets" ON)
 
 # Add submodule library
 add_subdirectory(libCosmicCore)
@@ -32,6 +33,7 @@ target_include_directories(cosmicscanner PRIVATE
 target_link_libraries(cosmicscanner PRIVATE CosmicCommon OpenMP::OpenMP_CXX)
 target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
 
+if(COSMICSCANNER_BUILD_TESTS)
 enable_testing()
 
 add_test(
@@ -172,5 +174,6 @@ target_link_libraries(eval_repeatability_reml PRIVATE CosmicCommon)
 target_include_directories(eval_repeatability_reml PRIVATE
     ${CMAKE_SOURCE_DIR}/libCosmicCore/src
 )
+endif()
 
 install(TARGETS cosmicscanner RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
