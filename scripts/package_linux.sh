@@ -72,7 +72,7 @@ CXX="${CXX_BIN}" "${CMAKE_BIN}" -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
 
 mkdir -p "${PREFIX}/lib" "${PREFIX}/docs" "${PREFIX}/examples" "${PREFIX}/scripts" "${PREFIX}/test"
 
-for file in README.md CHANGELOG.md LICENSE VERSION install.sh; do
+for file in CHANGELOG.md LICENSE VERSION install.sh; do
   if [[ -f "${ROOT_DIR}/${file}" ]]; then
     cp "${ROOT_DIR}/${file}" "${PREFIX}/${file}"
   fi
@@ -86,13 +86,160 @@ for script in check_dependencies.sh package_linux.sh; do
   fi
 done
 
-[[ -d "${ROOT_DIR}/docs" ]] && cp -a "${ROOT_DIR}/docs/." "${PREFIX}/docs/"
+cat > "${PREFIX}/README.md" <<'EOF'
+# CosmicGWAS v1.1.0
+
+CosmicGWAS is the first packaged Linux release of the CosmicScanner GWAS module.
+This release is intentionally scoped to three production-ready GWAS workflows:
+
+- Single-trait GWAS: standard LM/LMM with PLINK/BGEN/PGEN input and optional LOCO.
+- Multivariate GWAS: multi-trait LMM, including EMmvGWAS-compatible and GEMMA-style validation routes.
+- Repeatability GWAS: repeated-record mixed model for subjects with multiple observations.
+
+Other experimental or broader CosmicScanner model entries may still exist inside
+the executable, but they are not part of this binary package's supported release
+scope. Do not treat RRM, PSR/ordinal/count, ssGWAS, EB-GWAS, survival, maternal,
+GxE, rare-variant, BSLMM/DAP, or summary-stat utilities as production-supported
+features in this v1.1.0 package.
+
+## Quick Start
+
+```bash
+bash install.sh
+export PATH=$(pwd)/bin:$PATH
+bash test/run_demo.sh
+```
+
+## Main Entry
+
+```bash
+cosmicscanner --bfile examples/test_data --pheno examples/test_data.pheno --gwas --out results/single_trait
+```
+
+See `docs/USAGE_CN.md` for the three supported workflows and release boundaries.
+EOF
+
+cat > "${PREFIX}/docs/USAGE_CN.md" <<'EOF'
+# CosmicGWAS v1.1.0 三板块首发说明
+
+本 Linux 二进制包只按三个板块交付和验收：单性状 GWAS、多性状 GWAS、重复力 GWAS。
+源码中的其他模型入口不作为本首发包的正式支持范围。
+
+## 1. 单性状 GWAS
+
+适用场景：一个个体一条表型记录，连续性状，常规 LM/LMM GWAS。
+
+```bash
+bin/cosmicscanner \
+  --bfile examples/test_data \
+  --pheno examples/test_data.pheno \
+  --gwas \
+  --out results/single_trait
+```
+
+常用选项：
+
+- `--no-loco`：关闭 LOCO，使用全局 GRM。
+- `--lm 1` 或 `--lm-mode 4`：GEMMA-style 普通线性模型。
+- `--lmm-gemma-mode 1|2|3|4`：GEMMA-style LMM Wald/LRT/Score/all。
+- `--extract`、`--exclude`、`--chr`、`--from-bp`、`--to-bp`：限制 SNP 集合或基因组区间。
+
+主要输出：`*.assoc.txt` 或 GEMMA-style 对应关联结果文件。
+
+## 2. 多性状 GWAS
+
+适用场景：同一批个体有多个连续表型，需要联合检验 SNP 对多个性状的效应。
+
+表型文件格式：`FID IID TRAIT1 TRAIT2 ...`。
+
+```bash
+bin/cosmicscanner \
+  --bfile examples/test_data \
+  --pheno examples/demo_multivariate.pheno \
+  --mpheno-list 1,2 \
+  --multivariate \
+  --mv-method emmv \
+  --no-loco \
+  --gwas \
+  --out results/multivariate
+```
+
+推荐首发使用：
+
+- `--mv-method emmv`：快速多性状主路线。
+- `--emmvgwas`：EMmvGWAS-compatible 便捷入口，适合与 EMmvGWAS 路线对齐。
+- `--mv-method gemma-full`：小数据或候选区间的 GEMMA-style 精确/参考路线。
+
+主要输出：`*.assoc.mv.txt`。
+
+## 3. 重复力 GWAS
+
+适用场景：同一个体存在多条重复记录，例如多批次、多次采样、多次测定，但不强调动态曲线形状。
+
+长格式表型文件：`FID IID TIME PHENO` 或 `FID IID PHENO`。
+
+```bash
+bin/cosmicscanner \
+  --bfile examples/test_data \
+  --pheno examples/demo_repeatability.pheno \
+  --tpheno 1 \
+  --mpheno 2 \
+  --repeatability-model \
+  --repeatability-mode exact \
+  --gwas \
+  --out results/repeatability
+```
+
+推荐首发使用：
+
+- `--repeatability-mode exact`：正式主分析。
+- `--repeatability-mode fast`：快速预筛，不能替代正式结果。
+- `--repeatability-grm-cache <prefix>`：重复分析时缓存 subject-level GRM。
+
+主要输出：
+
+- `*.assoc.txt`：重复力 GWAS 关联结果。
+- `*.repeatability.null.txt`：null model 方差组分、h2 和重复力摘要。
+
+## 首发包不支持范围
+
+以下模型/工具可能仍在可执行文件帮助信息中出现，但不作为本包正式交付内容：RRM/dynamic GWAS、PSR/ordinal/count、ssGWAS、EB-GWAS、survival、maternal、GxE、rare-variant、BSLMM/DAP、summary-stat 工具、biobank two-step 原型和输入适配平台。
+
+这些功能留在源码开发线或后续专项发布包中，不建议在本 v1.1.0 包中作为生产结论使用。
+EOF
+
+if [[ -f "${ROOT_DIR}/docs/REPEATABILITY_GWAS_RELEASE_CN.md" ]]; then
+  cp "${ROOT_DIR}/docs/REPEATABILITY_GWAS_RELEASE_CN.md" "${PREFIX}/docs/REPEATABILITY_GWAS_RELEASE_CN.md"
+fi
 
 if [[ -d "${ROOT_DIR}/examples" ]]; then
   cp -a "${ROOT_DIR}/examples/." "${PREFIX}/examples/"
 elif [[ -d "${ROOT_DIR}/../CosmicScanner_Release/example" ]]; then
   cp -a "${ROOT_DIR}/../CosmicScanner_Release/example/." "${PREFIX}/examples/"
 fi
+
+python3 - <<PY
+from pathlib import Path
+root = Path("${PREFIX}")
+src = root / "examples" / "test_data.pheno"
+mv = root / "examples" / "demo_multivariate.pheno"
+rep = root / "examples" / "demo_repeatability.pheno"
+rows = []
+if src.exists():
+    for line in src.read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] not in {"NA", "-9", "nan", "NaN"}:
+            try:
+                y = float(parts[2])
+            except ValueError:
+                continue
+            rows.append((parts[0], parts[1], y))
+    mv.write_text("".join(f"{fid}\t{iid}\t{y:.8g}\t{0.5 * y + 0.1:.8g}\n" for fid, iid, y in rows))
+    rep.write_text("".join(
+        f"{fid}\t{iid}\t1\t{y:.8g}\n{fid}\t{iid}\t2\t{y + 0.05:.8g}\n"
+        for fid, iid, y in rows[:120]
+    ))
+PY
 
 cat > "${PREFIX}/test/run_demo.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -110,11 +257,27 @@ if [[ -f "${ROOT_DIR}/examples/test_data.bed" ]]; then
     --bfile "${ROOT_DIR}/examples/test_data" \
     --pheno "${ROOT_DIR}/examples/test_data.pheno" \
     --gwas --no-loco \
-    --out "${OUT_DIR}/demo"
-  test -s "${OUT_DIR}/demo.assoc.txt"
+    --out "${OUT_DIR}/single_trait"
+  test -s "${OUT_DIR}/single_trait.assoc.txt"
+
+  "${BIN}" \
+    --bfile "${ROOT_DIR}/examples/test_data" \
+    --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+    --mpheno-list 1,2 \
+    --multivariate --mv-method emmv --no-loco --gwas \
+    --out "${OUT_DIR}/multivariate"
+  test -s "${OUT_DIR}/multivariate.assoc.mv.txt"
+
+  "${BIN}" \
+    --bfile "${ROOT_DIR}/examples/test_data" \
+    --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
+    --tpheno 1 --mpheno 2 \
+    --repeatability-model --repeatability-mode fast --gwas \
+    --out "${OUT_DIR}/repeatability"
+  test -s "${OUT_DIR}/repeatability.assoc.txt"
 fi
 
-echo "CosmicGWAS demo passed."
+echo "CosmicGWAS single-trait, multivariate, and repeatability demos passed."
 EOF
 chmod +x "${PREFIX}/test/run_demo.sh"
 
@@ -127,8 +290,8 @@ Run the packaged smoke test from the unpacked release directory:
 bash test/run_demo.sh
 ```
 
-The script checks `bin/cosmicscanner --help` and, when the bundled PLINK demo
-data are present, runs a minimal no-LOCO GWAS into `test/results/`.
+The script checks `bin/cosmicscanner --help` and runs three packaged smoke tests:
+single-trait GWAS, multivariate GWAS, and repeatability GWAS.
 EOF
 
 LDD_REPORT="${PREFIX}/docs/ldd_report.txt"
