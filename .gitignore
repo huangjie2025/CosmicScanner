@@ -1,4 +1,6 @@
 build/
+build-release/
+dist/
 .dbg/
 examples/
 results/
