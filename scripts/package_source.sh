@@ -47,7 +47,7 @@ cat > "${PREFIX}/CHANGELOG.md" <<'EOF'
 ## v1.1.0-source
 
 - 首发源码包只保留单性状 GWAS、多性状 GWAS 和重复力 GWAS 三个板块。
-- 源码目录统一为单一 `src/`，原核心库源码并入 `src/core/`，不再保留单独 `libCosmicCore/` 目录。
+- 源码目录统一为单一扁平 `src/`，不再保留 `libCosmicCore/`、`src/core/` 或 `src/models/` 子目录。
 - 删除首发源码包无关模型和工具源码，包括 RRM、PSR/count/ordinal、ssGWAS、maternal、survival、GxE、rare-variant、biobank/REGENIE、BSLMM/DAP 和 summary-stat 工具。
 - 新增 focused CLI 和 focused CMake，仅构建三板块所需入口、I/O、GRM、LMM/MvLMM、repeatability 和输出代码。
 - 包内 smoke test 覆盖单性状、多性状和重复力 GWAS。
@@ -65,6 +65,9 @@ rm -f \
   "${PREFIX}/src/gwas_app.cpp" "${PREFIX}/src/gwas_app.h" \
   "${PREFIX}/src/gwas_biobank_kernels.cpp" "${PREFIX}/src/gwas_biobank_scan.cpp" \
   "${PREFIX}/src/gwas_rrm_scan.cpp" "${PREFIX}/src/gwas_scanner_rv.cpp" \
+  "${PREFIX}/src/h_matrix.cpp" "${PREFIX}/src/h_matrix.h" \
+  "${PREFIX}/src/a_matrix.cpp" "${PREFIX}/src/a_matrix.h" \
+  "${PREFIX}/src/apy.cpp" "${PREFIX}/src/apy.h" \
   "${PREFIX}/src/rare_variant_test.cpp" "${PREFIX}/src/rare_variant_test.h" \
   "${PREFIX}/src/ridge_regenie.cpp" "${PREFIX}/src/ridge_regenie.h" \
   "${PREFIX}/src/models/count_model.cpp" "${PREFIX}/src/models/count_model.h" \
@@ -81,6 +84,19 @@ rm -f \
   "${PREFIX}/src/models/multivariate_gemma_refit.cpp" \
   "${PREFIX}/src/models/multivariate_hybrid.cpp"
 
+if [[ -d "${PREFIX}/src/core" ]]; then
+  cp -a "${PREFIX}/src/core/." "${PREFIX}/src/"
+  rm -rf "${PREFIX}/src/core"
+fi
+if [[ -d "${PREFIX}/src/models" ]]; then
+  cp -a "${PREFIX}/src/models/." "${PREFIX}/src/"
+  rm -rf "${PREFIX}/src/models"
+fi
+rm -f \
+  "${PREFIX}/src/h_matrix.cpp" "${PREFIX}/src/h_matrix.h" \
+  "${PREFIX}/src/a_matrix.cpp" "${PREFIX}/src/a_matrix.h" \
+  "${PREFIX}/src/apy.cpp" "${PREFIX}/src/apy.h"
+
 cat > "${PREFIX}/CMakeLists.txt" <<'EOF'
 cmake_minimum_required(VERSION 3.15)
 project(CosmicGWAS VERSION 1.1.0 LANGUAGES CXX)
@@ -95,52 +111,26 @@ find_package(ZLIB REQUIRED)
 find_package(zstd REQUIRED)
 option(COSMICGWAS_ENABLE_BLAS "Enable BLAS/LAPACK acceleration" OFF)
 
-file(GLOB CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp")
-add_library(cosmic_core STATIC ${CORE_SOURCES})
-target_include_directories(cosmic_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
-target_link_libraries(cosmic_core PUBLIC Eigen3::Eigen OpenMP::OpenMP_CXX ZLIB::ZLIB zstd::libzstd)
+file(GLOB GWAS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 if(COSMICGWAS_ENABLE_BLAS)
   find_package(BLAS)
   if(BLAS_FOUND)
-    target_link_libraries(cosmic_core PUBLIC ${BLAS_LIBRARIES})
-    target_compile_definitions(cosmic_core PUBLIC EIGEN_USE_BLAS)
+    list(APPEND COSMICGWAS_EXTRA_LIBS ${BLAS_LIBRARIES})
+    list(APPEND COSMICGWAS_EXTRA_DEFS EIGEN_USE_BLAS)
   endif()
 
   find_package(LAPACK)
   if(LAPACK_FOUND)
-    target_link_libraries(cosmic_core PUBLIC ${LAPACK_LIBRARIES})
-    target_compile_definitions(cosmic_core PUBLIC EIGEN_USE_LAPACKE)
+    list(APPEND COSMICGWAS_EXTRA_LIBS ${LAPACK_LIBRARIES})
+    list(APPEND COSMICGWAS_EXTRA_DEFS EIGEN_USE_LAPACKE)
   endif()
 endif()
 
-set(GWAS_SOURCES
-  src/main.cpp
-  src/gwas_output.cpp
-  src/gwas_scanner.cpp
-  src/lmm_engine.cpp
-  src/mvlmm_engine.cpp
-  src/spa_test.cpp
-  src/models/univariate_model.cpp
-  src/models/multivariate_model.cpp
-  src/models/multivariate_output.cpp
-  src/models/repeatability_cache.cpp
-  src/models/repeatability_model.cpp
-  src/models/repeatability_output.cpp
-  src/models/repeatability_refit_validation.cpp
-  src/models/repeatability_scan_exact.cpp
-  src/models/repeatability_scan_fast.cpp
-  src/models/repeatability_scan_stcg.cpp
-  src/models/repeatability_utils.cpp
-)
-
 add_executable(cosmicscanner ${GWAS_SOURCES})
-target_include_directories(cosmicscanner PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/models
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-)
-target_link_libraries(cosmicscanner PRIVATE cosmic_core OpenMP::OpenMP_CXX)
+target_include_directories(cosmicscanner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(cosmicscanner PRIVATE Eigen3::Eigen OpenMP::OpenMP_CXX ZLIB::ZLIB zstd::libzstd ${COSMICGWAS_EXTRA_LIBS})
+target_compile_definitions(cosmicscanner PRIVATE ${COSMICGWAS_EXTRA_DEFS})
 target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
 
 install(TARGETS cosmicscanner RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -267,9 +257,9 @@ cat > "${PREFIX}/src/main.cpp" <<'EOF'
 
 #include "config.h"
 #include "data_loader.h"
-#include "models/multivariate_model.h"
-#include "models/repeatability_model.h"
-#include "models/univariate_model.h"
+#include "multivariate_model.h"
+#include "repeatability_model.h"
+#include "univariate_model.h"
 
 namespace {
 
@@ -417,7 +407,11 @@ EOF
 python3 - "${PREFIX}" <<'PY'
 from pathlib import Path
 root = Path(__import__('sys').argv[1])
-uv = root / "src/models/univariate_model.cpp"
+for path in root.glob("src/*"):
+    if path.is_file() and path.suffix in {".cpp", ".h"}:
+        path.write_text(path.read_text().replace('"models/', '"'))
+
+uv = root / "src/univariate_model.cpp"
 text = uv.read_text()
 old = '''    if (options_.run_skat || options_.run_burden) {
         scanner.runRareVariantScan(y_, X_, *plink_reader_, *bgen_reader_, *pgen_reader_, is_bgen_, is_pgen_, keep_);
@@ -434,7 +428,7 @@ new = '''    if (options_.run_skat || options_.run_burden || options_.biobank_mo
 '''
 uv.write_text(text.replace(old, new))
 
-mv = root / "src/models/multivariate_model.cpp"
+mv = root / "src/multivariate_model.cpp"
 text = mv.read_text()
 old = '''    if (options_.use_gemma_gxe) {
         runGemmaGxe();
@@ -543,10 +537,9 @@ the three supported workflows:
 - Multivariate GWAS
 - Repeatability GWAS
 
-The `src/` tree is intentionally kept intact so the checked-in build remains
-consistent with the development executable. Broader model entry points may be
-present in source files, but this source package documents and validates only
-the three supported workflows above.
+All retained C++ files are placed directly under a single flat `src/` directory.
+Development-only subdirectories and unsupported model sources are removed from
+this source package.
 
 ## Build
 
@@ -565,8 +558,8 @@ If CMake cannot find Eigen3, set `CMAKE_PREFIX_PATH` to the prefix containing
 bash test/run_source_smoke.sh
 ```
 
-The smoke test builds `cosmicscanner` with tests disabled and runs the packaged
-single-trait, multivariate, and repeatability demo analyses.
+The smoke test builds `cosmicscanner` and runs the packaged single-trait,
+multivariate, and repeatability demo analyses.
 EOF
 
 cat > "${PREFIX}/docs/USAGE_CN.md" <<'EOF'
