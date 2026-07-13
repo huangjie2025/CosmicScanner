@@ -50,10 +50,9 @@ cat > "${PREFIX}/CHANGELOG.md" <<'EOF'
 - 源码目录统一为单一扁平 `src/`，不再保留 `libCosmicCore/`、`src/core/` 或 `src/models/` 子目录。
 - 删除首发源码包无关模型和工具源码，包括 RRM、PSR/count/ordinal、ssGWAS、maternal、survival、GxE、rare-variant、biobank/REGENIE、BSLMM/DAP 和 summary-stat 工具。
 - 新增 focused CLI 和 focused CMake，仅构建三板块所需入口、I/O、GRM、LMM/MvLMM、repeatability 和输出代码。
-- 包内 smoke test 覆盖单性状、多性状和重复力 GWAS。
+- 包内 release validation 覆盖单性状、多性状、重复力 exact 和 fast comparison。
+- 新增文章范围、方法、输入输出、验证、复现、源码索引和引用元数据。
 EOF
-copy_file "${ROOT_DIR}/install.sh" "${PREFIX}/install.sh"
-chmod +x "${PREFIX}/install.sh"
 copy_dir "${ROOT_DIR}/src" "${PREFIX}/src"
 copy_dir "${ROOT_DIR}/libCosmicCore/src" "${PREFIX}/src/core"
 
@@ -355,6 +354,9 @@ int main(int argc, char** argv) {
         }
 
         if (!cfg.run_gwas) throw std::runtime_error("This focused build requires --gwas.");
+        if (cfg.repeatability_mode != "auto" && cfg.repeatability_mode != "exact" && cfg.repeatability_mode != "fast") {
+            throw std::runtime_error("Focused source build supports --repeatability-mode auto, exact, or fast only.");
+        }
         if (cfg.num_threads > 0) omp_set_num_threads(cfg.num_threads);
 
         #ifndef COSMICSCANNER_VERSION
@@ -521,17 +523,100 @@ hdr.write_text(text)
 PY
 
 mkdir -p "${PREFIX}/scripts" "${PREFIX}/docs" "${PREFIX}/examples" "${PREFIX}/test"
-copy_file "${ROOT_DIR}/scripts/package_linux.sh" "${PREFIX}/scripts/package_linux.sh"
-copy_file "${ROOT_DIR}/scripts/check_dependencies.sh" "${PREFIX}/scripts/check_dependencies.sh"
-copy_file "${ROOT_DIR}/scripts/package_source.sh" "${PREFIX}/scripts/package_source.sh"
-chmod +x "${PREFIX}/scripts/"*.sh
+
+cat > "${PREFIX}/scripts/build.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="${COSMICGWAS_BUILD_DIR:-${ROOT_DIR}/build}"
+BUILD_TYPE="${COSMICGWAS_BUILD_TYPE:-Release}"
+JOBS="${COSMICGWAS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+ENABLE_BLAS="${COSMICGWAS_ENABLE_BLAS:-OFF}"
+
+CMAKE_ARGS=(
+  -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+  -DCOSMICGWAS_ENABLE_BLAS="${ENABLE_BLAS}"
+)
+if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+  CMAKE_ARGS+=( -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" )
+elif [[ -n "${CONDA_PREFIX:-}" ]]; then
+  CMAKE_ARGS+=( -DCMAKE_PREFIX_PATH="${CONDA_PREFIX}" )
+fi
+
+cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
+cmake --build "${BUILD_DIR}" --target cosmicscanner --parallel "${JOBS}"
+"${BUILD_DIR}/cosmicscanner" --help >/dev/null
+
+echo "Build passed: ${BUILD_DIR}/cosmicscanner"
+EOF
+chmod +x "${PREFIX}/scripts/build.sh"
+
+cat > "${PREFIX}/scripts/validate_release.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="${COSMICGWAS_BUILD_DIR:-${ROOT_DIR}/build}"
+OUT_DIR="${COSMICGWAS_VALIDATION_OUT:-${ROOT_DIR}/test/results}"
+
+"${ROOT_DIR}/scripts/build.sh"
+BIN="${BUILD_DIR}/cosmicscanner"
+mkdir -p "${OUT_DIR}"
+
+run_case() {
+  local name="$1"
+  shift
+  echo "[validate] START ${name}"
+  "$@"
+  echo "[validate] PASS  ${name}"
+}
+
+run_case "single-trait LMM" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --gwas --no-loco \
+  --out "${OUT_DIR}/single_trait"
+test -s "${OUT_DIR}/single_trait.assoc.txt"
+
+run_case "multivariate LMM" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --mv-method emmv --no-loco --gwas \
+  --out "${OUT_DIR}/multivariate"
+test -s "${OUT_DIR}/multivariate.assoc.mv.txt"
+
+run_case "repeatability exact" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode exact --no-loco --gwas \
+  --out "${OUT_DIR}/repeatability_exact"
+test -s "${OUT_DIR}/repeatability_exact.assoc.txt"
+test -s "${OUT_DIR}/repeatability_exact.repeatability.null.txt"
+
+run_case "repeatability fast comparison" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode fast --no-loco --gwas \
+  --out "${OUT_DIR}/repeatability_fast"
+test -s "${OUT_DIR}/repeatability_fast.assoc.txt"
+
+echo "CosmicGWAS release validation passed."
+EOF
+chmod +x "${PREFIX}/scripts/validate_release.sh"
 
 cat > "${PREFIX}/README.md" <<'EOF'
 # CosmicGWAS Source Package
 
-This source package is curated for the first CosmicGWAS Linux release. It keeps
-only the source files and minimal release assets needed to build and evaluate
-the three supported workflows:
+CosmicGWAS v1.1.0 is a focused, reproducible source release for the first
+manuscript. It contains three validated continuous-trait GWAS workflows:
 
 - Single-trait GWAS
 - Multivariate GWAS
@@ -541,25 +626,309 @@ All retained C++ files are placed directly under a single flat `src/` directory.
 Development-only subdirectories and unsupported model sources are removed from
 this source package.
 
-## Build
+## Quick Start
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target cosmicscanner -j
-./build/cosmicscanner --help
+bash scripts/build.sh
+bash scripts/validate_release.sh
 ```
+
+The release defaults to Eigen's native solvers. BLAS/LAPACK are opt-in because
+results depend on the selected vendor runtime:
+
+```bash
+COSMICGWAS_ENABLE_BLAS=ON bash scripts/build.sh
+```
+
+## Documentation
+
+- `docs/ARTICLE_SCOPE.md`: manuscript claims and exclusions.
+- `docs/METHODS.md`: statistical models and Woodbury reduction.
+- `docs/INPUT_OUTPUT.md`: supported files, commands, and outputs.
+- `docs/VALIDATION.md`: reference comparisons and release checks.
+- `docs/REPRODUCIBILITY.md`: end-to-end reproduction instructions.
+- `docs/SOURCE_LAYOUT.md`: flat source-file map.
+- `docs/RELEASE_CHECKLIST.md`: completed release gates and manuscript gaps.
+
+## Dependencies
+
+- Linux x86_64
+- CMake 3.15 or newer
+- C++17 compiler
+- Eigen3
+- OpenMP
+- zlib and zstd
 
 If CMake cannot find Eigen3, set `CMAKE_PREFIX_PATH` to the prefix containing
 `share/eigen3/cmake/Eigen3Config.cmake`.
 
-## Smoke Test
+## Citation
 
-```bash
-bash test/run_source_smoke.sh
+Citation metadata are provided in `CITATION.cff`. Update the journal and DOI
+fields after manuscript acceptance.
+EOF
+
+cat > "${PREFIX}/CITATION.cff" <<'EOF'
+cff-version: 1.2.0
+message: "If you use CosmicGWAS, please cite this software and the associated manuscript."
+title: "CosmicGWAS: single-trait, multivariate, and repeatability genome-wide association analysis"
+type: software
+version: "1.1.0"
+date-released: "2026-07-13"
+authors:
+  - family-names: "Huang"
+    given-names: "Jie"
+    email: "huangjie2025@zju.edu.cn"
+license: MIT
+repository-code: "https://github.com/huangjie2025/CosmicScanner"
+keywords:
+  - GWAS
+  - linear mixed model
+  - multivariate analysis
+  - repeated measurements
+  - Woodbury identity
+EOF
+
+cat > "${PREFIX}/docs/ARTICLE_SCOPE.md" <<'EOF'
+# Manuscript Scope
+
+## Central question
+
+Can record-level repeatability GWAS retain the additive genetic, permanent
+environmental, and residual covariance structure while moving the dominant
+dense linear algebra from records to genotyped subjects?
+
+## Supported claims
+
+1. Single-trait LMM provides the validated baseline and shared GRM/LOCO scan.
+2. Multivariate LMM supports joint tests of correlated continuous traits.
+3. Repeatability exact mode uses a subject-level Woodbury reduction without
+   replacing repeated records by subject means.
+4. Repeatability fast mode is an explicit subject-mean approximation for
+   screening and sensitivity analysis.
+5. PLINK BED, PLINK2 PGEN, and BGEN readers feed the same analysis interface.
+
+## Out of scope
+
+This release does not include RRM, non-Gaussian PSR models, ssGWAS, maternal,
+survival, GxE, rare-variant, biobank two-step, BSLMM/DAP, or summary-stat tools.
+Those development branches are not evidence for the first manuscript.
+EOF
+
+cat > "${PREFIX}/docs/METHODS.md" <<'EOF'
+# Methods Summary
+
+## Shared analysis layer
+
+All workflows use the same genotype readers, sample matching, covariate design,
+variant filters, genomic relationship matrix (GRM), and block-wise SNP loading.
+The default GRM is the VanRaden standardized cross-product. LOCO removes the
+tested chromosome from the null-model GRM.
+
+## Single-trait LMM
+
+For SNP `j`, the model is
+
+```text
+y = Xb + x_j beta_j + g + e
+g ~ N(0, Vg G),  e ~ N(0, Ve I).
 ```
 
-The smoke test builds `cosmicscanner` and runs the packaged single-trait,
-multivariate, and repeatability demo analyses.
+GRM eigendecomposition diagonalizes the null covariance. Phenotype,
+covariates, and genotype blocks are rotated once per global or LOCO null model;
+SNP effects are evaluated by weighted least squares.
+
+## Multivariate LMM
+
+For `q` continuous traits,
+
+```text
+Y = XB + x_j a_j' + U + E
+U ~ MN(0, G, K),  E ~ MN(0, I, R).
+```
+
+The focused release exposes the EMMV and fixed-null Wald routes. Trait genetic
+and residual covariance matrices are estimated under the null model, followed
+by a joint multi-degree-of-freedom SNP test.
+
+## Record-level repeatability model
+
+```text
+y = Xb + Zg + Zp + x_j beta_j + e
+g ~ N(0, Vg G),  p ~ N(0, Vpe I),  e ~ N(0, Ve W^-1).
+```
+
+`Z` maps records to subjects and `W` contains optional record weights. The
+marginal covariance is
+
+```text
+V = Z K Z' + R,
+K = Vg G + Vpe I,
+R = Ve W^-1.
+```
+
+Exact mode applies
+
+```text
+V^-1 = R^-1 - R^-1 Z (K^-1 + Z'R^-1Z)^-1 Z'R^-1
+```
+
+and the matrix determinant lemma. The dense core matrix is subject-level, while
+record-level phenotype and covariate contributions are retained through `Z`.
+Fast mode instead aggregates records to subject means and is not a replacement
+for exact mode in formal analysis.
+EOF
+
+cat > "${PREFIX}/docs/INPUT_OUTPUT.md" <<'EOF'
+# Input and Output Contract
+
+## Genotypes
+
+- PLINK 1 binary: `--bfile prefix` for `.bed/.bim/.fam`.
+- PLINK 2: `--pfile prefix` for `.pgen/.pvar/.psam`.
+- BGEN: `--bgen file.bgen --sample file.sample`.
+
+## Phenotypes
+
+Single-trait and multivariate files use `FID IID TRAIT...`. Trait indices are
+1-based after the two ID columns. Repeatability files use either
+`FID IID PHENO` or `FID IID TIME PHENO`; repeated `FID IID` rows are records of
+the same subject. Missing values are `NA` or `-9`.
+
+## Covariates
+
+- `--qcovar`: quantitative covariates.
+- `--covar`: categorical covariates.
+- Repeatability covariates may be keyed by `FID IID TIME` when a time column is
+  present, otherwise they are matched by subject.
+
+## Main outputs
+
+- Single-trait: `<out>.assoc.txt`.
+- Multivariate: `<out>.assoc.mv.txt`.
+- Repeatability: `<out>.assoc.txt` and
+  `<out>.repeatability.null.txt`.
+
+Association outputs contain variant location, alleles, frequency, effect/test
+statistics, and P values. The repeatability null summary contains `Vg`, `Vpe`,
+`Ve`, heritability, repeatability, and scan-mode metadata.
+EOF
+
+cat > "${PREFIX}/docs/VALIDATION.md" <<'EOF'
+# Validation Evidence
+
+## External reference comparisons
+
+The development validation records report:
+
+| Workflow | Reference | Key result |
+|---|---|---|
+| Single-trait LMM | GEMMA | beta r=0.99987, SE r=0.99953, -log10(P) r=0.99929 |
+| Multivariate EMMV | official EMmvGWAS RIL example | -log10(P) r=0.9999994 |
+| Multivariate GEMMA-full development route | GEMMA | -log10(P) r=0.99849 |
+| Repeatability exact | RepeatABEL | near-perfect concordance after allele harmonization |
+
+Reference metrics describe controlled benchmark datasets and should not be
+interpreted as guarantees for every dataset.
+
+## Release validation
+
+Run:
+
+```bash
+bash scripts/validate_release.sh
+```
+
+The command rebuilds from source and executes single-trait LMM, multivariate
+LMM, repeatability exact, and repeatability fast comparison analyses. It checks
+that the documented association and repeatability-null outputs are produced.
+
+## Remaining manuscript work
+
+The release check is not a substitute for manuscript simulation. Formal paper
+results should additionally report type-I error, power, effect bias, standard
+error calibration, record imbalance, variance-component scenarios, and a real
+repeated-measure application.
+EOF
+
+cat > "${PREFIX}/docs/REPRODUCIBILITY.md" <<'EOF'
+# Reproducibility
+
+## Build and validate
+
+```bash
+tar -xzf CosmicGWAS-v1.1.0-source.tar.gz
+cd CosmicGWAS-v1.1.0-source
+bash scripts/build.sh
+bash scripts/validate_release.sh
+```
+
+To limit shared-server resource use:
+
+```bash
+COSMICGWAS_BUILD_JOBS=4 OMP_NUM_THREADS=4 bash scripts/validate_release.sh
+```
+
+The default build disables external BLAS/LAPACK so release results do not
+silently depend on MKL/OpenBLAS selection. Accelerated builds are opt-in with
+`COSMICGWAS_ENABLE_BLAS=ON` and should be validated independently.
+
+## Packaged examples
+
+- `test_data.*`: PLINK genotype and single-trait phenotype fixture.
+- `demo_multivariate.pheno`: two-trait fixture with matching IDs.
+- `demo_repeatability.pheno`: long-format repeated-record fixture.
+
+Validation outputs are written under `test/results/` and are not part of the
+source archive checksum.
+EOF
+
+cat > "${PREFIX}/docs/SOURCE_LAYOUT.md" <<'EOF'
+# Source Layout
+
+All C++ files are intentionally flat under `src/`, following the release style
+of established command-line genetics tools.
+
+| Responsibility | Files |
+|---|---|
+| Entry and configuration | `main.cpp`, `config.h` |
+| Genotype input | `plink_reader.*`, `pgen_reader.*`, `bgen_reader.*` |
+| Phenotype/covariates | `pheno_reader.*`, `covar_reader.*`, `data_loader.h`, `data_filter.h`, `design.*` |
+| QC and GRM | `qc_*`, `grm_builder.*`, `grm_factory.*` |
+| Single-trait | `univariate_model.*`, `gwas_scanner.*`, `lmm_engine.*`, `gwas_output.cpp` |
+| Multivariate | `multivariate_model.*`, `multivariate_helpers.h`, `multivariate_output.cpp`, `mvlmm_engine.*` |
+| Repeatability | `repeatability_*` |
+| Numerical support | `eigen_vce.*`, `vce.*`, `v_matrix.*`, matrix/PCG/STCG helpers |
+
+`spa_test.*` remains an internal compile-time helper referenced by the shared
+LMM engine; the focused command-line interface does not expose SPA as a release
+workflow.
+EOF
+
+cat > "${PREFIX}/docs/RELEASE_CHECKLIST.md" <<'EOF'
+# Release Checklist
+
+## Completed for v1.1.0-source
+
+- [x] Flat `src/` layout with no `libCosmicCore`, `core`, or `models` directory.
+- [x] Focused CLI exposes single-trait, multivariate, and repeatability GWAS.
+- [x] Unsupported business-model source files are excluded from the archive.
+- [x] Clean CMake Release build from an unpacked tarball.
+- [x] Single-trait LMM packaged analysis produces association output.
+- [x] Multivariate LMM packaged analysis produces joint association output.
+- [x] Repeatability exact produces association, null, and cache summaries.
+- [x] Repeatability fast comparison produces association output.
+- [x] BLAS/LAPACK are disabled by default for portable numerical behavior.
+- [x] Source tarball has a SHA-256 checksum and citation metadata.
+
+## Required before manuscript submission
+
+- [ ] Final simulation matrix for type-I error and power.
+- [ ] Exact repeatability versus subject-mean aggregation comparison.
+- [ ] Record-imbalance and record-level covariate sensitivity analysis.
+- [ ] Final RepeatABEL reference table with allele harmonization rules.
+- [ ] Real repeated-measure application using publishable data.
+- [ ] Final manuscript title, journal, DOI, and citation metadata.
 EOF
 
 cat > "${PREFIX}/docs/USAGE_CN.md" <<'EOF'
@@ -603,12 +972,8 @@ cmake --build build --target cosmicscanner -j
   --out results/repeatability
 ```
 
-包内快速 smoke 使用 `--repeatability-mode fast`，正式主分析建议使用 `exact`。
+正式主分析建议使用 `exact`；`fast` 只用于预筛和敏感性比较。
 EOF
-
-if [[ -f "${ROOT_DIR}/docs/REPEATABILITY_GWAS_RELEASE_CN.md" ]]; then
-  cp "${ROOT_DIR}/docs/REPEATABILITY_GWAS_RELEASE_CN.md" "${PREFIX}/docs/REPEATABILITY_GWAS_RELEASE_CN.md"
-fi
 
 if [[ -d "${ROOT_DIR}/examples" ]]; then
   cp -a "${ROOT_DIR}/examples/." "${PREFIX}/examples/"
@@ -644,54 +1009,7 @@ cat > "${PREFIX}/test/run_source_smoke.sh" <<'EOF'
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${COSMICGWAS_SOURCE_BUILD_DIR:-${ROOT_DIR}/build}"
-OUT_DIR="${ROOT_DIR}/test/results"
-JOBS="${COSMICGWAS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
-
-mkdir -p "${OUT_DIR}"
-
-CMAKE_PREFIX_ARGS=()
-PREFIX_CANDIDATES=()
-[[ -n "${CMAKE_PREFIX_PATH:-}" ]] && PREFIX_CANDIDATES+=("${CMAKE_PREFIX_PATH}")
-[[ -n "${CONDA_PREFIX:-}" ]] && PREFIX_CANDIDATES+=("${CONDA_PREFIX}")
-[[ -f "/disk228/huangjie/software/miniconda3/share/eigen3/cmake/Eigen3Config.cmake" ]] && PREFIX_CANDIDATES+=("/disk228/huangjie/software/miniconda3")
-if [[ "${#PREFIX_CANDIDATES[@]}" -gt 0 ]]; then
-  IFS=';'; CMAKE_PREFIX_JOINED="${PREFIX_CANDIDATES[*]}"; unset IFS
-  CMAKE_PREFIX_ARGS+=( -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_JOINED}" )
-fi
-
-cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
-  -DCMAKE_BUILD_TYPE=Release \
-  "${CMAKE_PREFIX_ARGS[@]}"
-cmake --build "${BUILD_DIR}" --target cosmicscanner --parallel "${JOBS}"
-
-BIN="${BUILD_DIR}/cosmicscanner"
-"${BIN}" --help >/dev/null
-
-"${BIN}" \
-  --bfile "${ROOT_DIR}/examples/test_data" \
-  --pheno "${ROOT_DIR}/examples/test_data.pheno" \
-  --gwas --no-loco \
-  --out "${OUT_DIR}/single_trait"
-test -s "${OUT_DIR}/single_trait.assoc.txt"
-
-"${BIN}" \
-  --bfile "${ROOT_DIR}/examples/test_data" \
-  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
-  --mpheno-list 1,2 \
-  --multivariate --mv-method emmv --no-loco --gwas \
-  --out "${OUT_DIR}/multivariate"
-test -s "${OUT_DIR}/multivariate.assoc.mv.txt"
-
-"${BIN}" \
-  --bfile "${ROOT_DIR}/examples/test_data" \
-  --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
-  --tpheno 1 --mpheno 2 \
-  --repeatability-model --repeatability-mode fast --gwas \
-  --out "${OUT_DIR}/repeatability"
-test -s "${OUT_DIR}/repeatability.assoc.txt"
-
-echo "CosmicGWAS source smoke passed."
+exec "${ROOT_DIR}/scripts/validate_release.sh"
 EOF
 chmod +x "${PREFIX}/test/run_source_smoke.sh"
 
