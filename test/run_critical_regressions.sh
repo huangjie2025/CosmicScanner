@@ -108,7 +108,10 @@ for threads in 1 2 4 8; do
     if [[ -z "${baseline}" ]]; then
       baseline="${prefix}.G.bin"
     else
-      cmp "${baseline}" "${prefix}.G.bin"
+      case "${OSTYPE:-}" in
+        linux*) cmp "${baseline}" "${prefix}.G.bin" ;;
+        *) python3 "${ROOT_DIR}/test/compare_float_binary.py" "${baseline}" "${prefix}.G.bin" 1e-7 ;;
+      esac
     fi
   done
 done

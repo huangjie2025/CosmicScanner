@@ -28,7 +28,7 @@
 #include "eigen_vce.h"
 #include "lmm_engine.h"
 
-#ifndef _WIN32
+#ifdef __linux__
 extern "C" {
     void openblas_set_num_threads(int num_threads) __attribute__((weak));
 }
@@ -208,7 +208,7 @@ static int drop_aliased_fixed_effects(Eigen::MatrixXf& X, FixedDesignG& fd) {
 }
 
 static void set_blas_threads(int n) {
-#ifndef _WIN32
+#ifdef __linux__
     if (openblas_set_num_threads) openblas_set_num_threads(n);
 #else
     (void)n;
