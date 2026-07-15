@@ -54,6 +54,7 @@ inline GenotypeMeta loadGenotype(
         if (!sample_file.empty()) {
             std::cout << "Loading sample file: " << sample_file << "\n";
             std::ifstream sfs(sample_file);
+            if (!sfs) throw std::runtime_error("Cannot open BGEN sample file: " + sample_file);
             std::string line;
             std::getline(sfs, line);
             std::getline(sfs, line);
@@ -68,7 +69,8 @@ inline GenotypeMeta loadGenotype(
                 cnt++;
             }
             if (cnt != meta.n_samples) {
-                std::cerr << "Warning: Sample file count (" << cnt << ") != BGEN sample count (" << meta.n_samples << ").\n";
+                throw std::runtime_error("BGEN sample file count (" + std::to_string(cnt)
+                    + ") does not match BGEN sample count (" + std::to_string(meta.n_samples) + ")");
             }
         } else {
             const auto& ids = bgen_reader.getSampleIds();

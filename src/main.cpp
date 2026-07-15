@@ -14,6 +14,10 @@
 #include "single_step_model.h"
 #include "univariate_model.h"
 
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+
 namespace {
 
 std::vector<int> parse_int_list(const std::string& s) {
@@ -45,12 +49,14 @@ void print_usage(const char* prog) {
               << "  --multivariate --mpheno-list 1,2[,3...] --scan-tier approx|semi|exact\n\n"
               << "Repeatability GWAS:\n"
               << "  --repeatability-model --tpheno <time_col> --mpheno <trait_col>\n"
-              << "  --repeatability-mode exact --scan-tier approx|semi|exact\n\n"
+              << "  --repeatability-mode exact --scan-tier approx|semi|exact\n"
+              << "  --repeatability-mode fast|stcg\n\n"
               << "A/G/H matrices:\n"
               << "  --make-agh --ped <file> [--genotyped-list <file>]\n\n"
               << "Common filters:\n"
               << "  --maf <x> --hwe <x> --extract <file> --exclude <file>\n"
-              << "  --chr <chr> --from-bp <bp> --to-bp <bp> --threads <n>\n";
+               << "  --chr <chr> --from-bp <bp> --to-bp <bp> --threads <n>\n";
+    std::cout << "  --version                    Print version and exit\n";
 }
 
 }  // namespace
@@ -67,6 +73,7 @@ int main(int argc, char** argv) {
                 return argv[++i];
             };
             if (a == "--help" || a == "-h") { print_usage(argv[0]); return 0; }
+            else if (a == "--version") { std::cout << "CosmicScanner " << COSMICSCANNER_VERSION << "\n"; return 0; }
             else if (a == "--bfile") cfg.bfile_prefix = need("--bfile");
             else if (a == "--pfile") cfg.pfile_prefix = need("--pfile");
             else if (a == "--pgen") cfg.pgen_file = need("--pgen");
@@ -122,14 +129,24 @@ int main(int argc, char** argv) {
         }
 
         if (!cfg.run_gwas) throw std::runtime_error("This focused build requires --gwas or --make-agh.");
-        if (cfg.repeatability_mode != "auto" && cfg.repeatability_mode != "exact" && cfg.repeatability_mode != "fast") {
-            throw std::runtime_error("Focused source build supports --repeatability-mode auto, exact, or fast only.");
+        const int genotype_sources = (!cfg.bfile_prefix.empty() ? 1 : 0)
+            + (!cfg.bgen_file.empty() ? 1 : 0)
+            + ((!cfg.pfile_prefix.empty() || !cfg.pgen_file.empty()) ? 1 : 0);
+        if (genotype_sources != 1) {
+            throw std::runtime_error("Specify exactly one genotype input: --bfile, --bgen, or --pfile/--pgen");
+        }
+        if (cfg.repeatability_mode != "auto" && cfg.repeatability_mode != "exact"
+            && cfg.repeatability_mode != "fast" && cfg.repeatability_mode != "stcg") {
+            throw std::runtime_error("Focused source build supports --repeatability-mode auto, exact, fast, or stcg only.");
+        }
+        if (cfg.scan_from_bp < -1 || cfg.scan_to_bp < -1) {
+            throw std::runtime_error("--from-bp and --to-bp must be non-negative");
+        }
+        if (cfg.scan_from_bp >= 0 && cfg.scan_to_bp >= 0 && cfg.scan_from_bp > cfg.scan_to_bp) {
+            throw std::runtime_error("--from-bp cannot be greater than --to-bp");
         }
         if (cfg.num_threads > 0) omp_set_num_threads(cfg.num_threads);
 
-        #ifndef COSMICSCANNER_VERSION
-        #define COSMICSCANNER_VERSION "unknown"
-        #endif
         std::cout << "CosmicScanner focused source v" << COSMICSCANNER_VERSION << "\n";
 
         PlinkReader plink_reader;

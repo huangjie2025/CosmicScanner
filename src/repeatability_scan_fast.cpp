@@ -91,6 +91,10 @@ void RepeatabilityModel::scanFast() {
     lmm_fast_opts.fast_mode = true; lmm_fast_opts.min_maf = options_.min_maf;
     lmm_fast_opts.min_hwe = options_.min_hwe; lmm_fast_opts.use_covariate_projection = options_.use_covariate_projection;
     lmm_fast_opts.use_spa = options_.use_spa; lmm_fast_opts.thread_num = options_.n_threads;
+    lmm_fast_opts.extract_set = options_.extract_set;
+    lmm_fast_opts.exclude_set = options_.exclude_set;
+    lmm_fast_opts.scan_from_bp = options_.scan_from_bp;
+    lmm_fast_opts.scan_to_bp = options_.scan_to_bp;
 
     std::string assoc_file = options_.out_prefix + ".assoc.txt";
     writeAssocHeader(assoc_file, options_.out_ssf, options_.eb_lmm);
@@ -99,9 +103,9 @@ void RepeatabilityModel::scanFast() {
 
     GrmBuilder::Options grm_opts; grm_opts.min_maf = (float)options_.min_maf;
     grm_opts.min_hwe = (float)options_.min_hwe; grm_opts.algorithm = options_.grm_alg;
-    #ifdef _OPENMP
-    grm_opts.thread_num = omp_get_max_threads();
-    #endif
+    grm_opts.thread_num = options_.n_threads;
+    grm_opts.extract_set = options_.extract_set;
+    grm_opts.exclude_set = options_.exclude_set;
 
     GrmBuilder global_builder(grm_opts);
     if (is_bgen_) { bgen_reader_->reset(); global_builder.compute(*bgen_reader_); }
@@ -117,6 +121,7 @@ void RepeatabilityModel::scanFast() {
 
         for (int chr_idx = 0; chr_idx < (int)sorted_chroms.size(); ++chr_idx) {
             const auto& chrom = sorted_chroms[chr_idx];
+            if (!options_.scan_chrom.empty() && chrom != options_.scan_chrom) continue;
             std::cout << "  Fast LOCO chromosome " << chrom << "...\n";
 
             GrmBuilder::Options chr_opts = grm_opts;
@@ -174,9 +179,9 @@ void RepeatabilityModel::scanFast() {
         LmmEngine engine_fast(lmm_fast_opts); engine_fast.prepareFromVce(vce_fast);
 
         std::vector<GwasResult> results_fast;
-        if (is_bgen_) { bgen_reader_->reset(); if (options_.eb_lmm) engine_fast.scanEB(*bgen_reader_, results_fast, agg_keep.keep_indices); else engine_fast.scan(*bgen_reader_, results_fast, agg_keep.keep_indices); }
-        else if (is_pgen_) { pgen_reader_->reset(); if (options_.eb_lmm) engine_fast.scanEB(*pgen_reader_, results_fast, agg_keep.keep_indices); else engine_fast.scan(*pgen_reader_, results_fast, agg_keep.keep_indices); }
-        else { if (options_.eb_lmm) engine_fast.scanEB(*plink_reader_, results_fast, agg_keep.keep_indices); else engine_fast.scan(*plink_reader_, results_fast, agg_keep.keep_indices); }
+        if (is_bgen_) { bgen_reader_->reset(); if (options_.eb_lmm) engine_fast.scanEB(*bgen_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); else engine_fast.scan(*bgen_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); }
+        else if (is_pgen_) { pgen_reader_->reset(); if (options_.eb_lmm) engine_fast.scanEB(*pgen_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); else engine_fast.scan(*pgen_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); }
+        else { if (options_.eb_lmm) engine_fast.scanEB(*plink_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); else engine_fast.scan(*plink_reader_, results_fast, agg_keep.keep_indices, options_.scan_chrom); }
         appendAssocResults(assoc_file, results_fast, options_.out_ssf, options_.eb_lmm);
         if (options_.eb_lmm) accumulateEbResults(results_fast, eb_effective_tests, eb_tested_markers);
     }

@@ -111,14 +111,15 @@ void RepeatabilityModel::scanSTCG() {
                 float val = dosage[obs_to_sample_[i]];
                 g[i] = val;
                 if (!std::isnan(val)) { sum_g += val; valid_n++; }
-                else g[i] = 0.0;
             }
             if (valid_n < 10) return;
             double maf = sum_g / (2.0 * valid_n);
             if (maf > 0.5) maf = 1.0 - maf;
             if (maf < options_.min_maf) return;
             double g_mean = sum_g / valid_n;
-            g.array() -= g_mean;
+            for (int i = 0; i < n_obs; ++i) {
+                g[i] = std::isnan(g[i]) ? 0.0 : g[i] - g_mean;
+            }
 
             double score = g.dot(P_y);
             Eigen::VectorXd Vinv_g = woodbury_Vinv_vec(g);
@@ -144,6 +145,10 @@ void RepeatabilityModel::scanSTCG() {
                 std::string chrom, rsid, ref, alt; uint32_t pos; Eigen::VectorXf dosage;
                 if (!bgen_reader_->readVariant(chrom, rsid, pos, ref, alt, dosage)) break;
                 if (!chrom_filter.empty() && chrom != chrom_filter) continue;
+                if (options_.scan_from_bp >= 0 && static_cast<long long>(pos) < options_.scan_from_bp) continue;
+                if (options_.scan_to_bp >= 0 && static_cast<long long>(pos) > options_.scan_to_bp) continue;
+                if (!options_.extract_set.empty() && options_.extract_set.find(rsid) == options_.extract_set.end()) continue;
+                if (!options_.exclude_set.empty() && options_.exclude_set.find(rsid) != options_.exclude_set.end()) continue;
                 process_snp(chrom, rsid, pos, ref, alt, dosage);
             }
         } else if (is_pgen_) {
@@ -153,6 +158,10 @@ void RepeatabilityModel::scanSTCG() {
                 std::string chrom, rsid, ref, alt; uint32_t pos; Eigen::VectorXf dosage;
                 if (!pgen_reader_->readVariant(chrom, rsid, pos, ref, alt, dosage)) break;
                 if (!chrom_filter.empty() && chrom != chrom_filter) continue;
+                if (options_.scan_from_bp >= 0 && static_cast<long long>(pos) < options_.scan_from_bp) continue;
+                if (options_.scan_to_bp >= 0 && static_cast<long long>(pos) > options_.scan_to_bp) continue;
+                if (!options_.extract_set.empty() && options_.extract_set.find(rsid) == options_.extract_set.end()) continue;
+                if (!options_.exclude_set.empty() && options_.exclude_set.find(rsid) != options_.exclude_set.end()) continue;
                 process_snp(chrom, rsid, pos, ref, alt, dosage);
             }
         } else {
@@ -160,6 +169,10 @@ void RepeatabilityModel::scanSTCG() {
             int m = plink_reader_->getNumSnps();
             for (int j = 0; j < m; ++j) {
                 if (!chrom_filter.empty() && bim[j].chrom != chrom_filter) continue;
+                if (options_.scan_from_bp >= 0 && bim[j].bp_pos < options_.scan_from_bp) continue;
+                if (options_.scan_to_bp >= 0 && bim[j].bp_pos > options_.scan_to_bp) continue;
+                if (!options_.extract_set.empty() && options_.extract_set.find(bim[j].id) == options_.extract_set.end()) continue;
+                if (!options_.exclude_set.empty() && options_.exclude_set.find(bim[j].id) != options_.exclude_set.end()) continue;
                 Eigen::VectorXf dosage;
                 plink_reader_->getSnpGenotypes(j, dosage);
                 process_snp(bim[j].chrom, bim[j].id, bim[j].bp_pos, bim[j].ref, bim[j].alt, dosage);
@@ -170,6 +183,8 @@ void RepeatabilityModel::scanSTCG() {
     GrmBuilder::Options grm_opts; grm_opts.min_maf = (float)options_.min_maf;
     grm_opts.min_hwe = (float)options_.min_hwe; grm_opts.algorithm = options_.grm_alg;
     grm_opts.thread_num = options_.n_threads;
+    grm_opts.extract_set = options_.extract_set;
+    grm_opts.exclude_set = options_.exclude_set;
 
     bool loco_enabled = !options_.no_loco;
     std::set<std::string> observed_chroms;
@@ -194,7 +209,7 @@ void RepeatabilityModel::scanSTCG() {
 
     if (!loco_enabled) {
         std::cout << "  Running global GRM scan (LOCO disabled or single chromosome).\n";
-        scan_stcg_with_grm(G_subject_, "", ofs);
+        scan_stcg_with_grm(G_subject_, options_.scan_chrom, ofs);
         writeNullSummary(null_file, "STCG",
             {{"V_G", std::to_string(v_g_)}, {"V_PE", std::to_string(v_pe_)},
              {"V_E", std::to_string(v_e_)}, {"n_records", std::to_string(n_obs)},
@@ -264,6 +279,7 @@ void RepeatabilityModel::scanSTCG() {
 
         for (size_t i = 0; i < chroms.size(); ++i) {
             const auto& chrom = chroms[i];
+            if (!options_.scan_chrom.empty() && chrom != options_.scan_chrom) continue;
             std::cout << "  STCG LOCO chromosome " << chrom << "...\n";
 
             double S_loco = S_global - chr_scaling[i];

@@ -32,7 +32,18 @@ void RepeatabilityModel::scanRefitValidation() {
     int n_variants = (int)bim.size();
     int n_obs = n_recs_kept_;
     int n_subjects = n_samples_;
-    int variants_to_run = (options_.refit_limit > 0) ? std::min(n_variants, options_.refit_limit) : n_variants;
+    std::vector<int> eligible_variants;
+    eligible_variants.reserve(n_variants);
+    for (int j = 0; j < n_variants; ++j) {
+        if (!options_.scan_chrom.empty() && bim[j].chrom != options_.scan_chrom) continue;
+        if (options_.scan_from_bp >= 0 && bim[j].bp_pos < options_.scan_from_bp) continue;
+        if (options_.scan_to_bp >= 0 && bim[j].bp_pos > options_.scan_to_bp) continue;
+        if (!options_.extract_set.empty() && options_.extract_set.find(bim[j].id) == options_.extract_set.end()) continue;
+        if (!options_.exclude_set.empty() && options_.exclude_set.find(bim[j].id) != options_.exclude_set.end()) continue;
+        eligible_variants.push_back(j);
+        if (options_.refit_limit > 0 && (int)eligible_variants.size() >= options_.refit_limit) break;
+    }
+    int variants_to_run = (int)eligible_variants.size();
 
     std::string out_file = options_.out_prefix + (primary_exact_scan ? ".assoc.txt" : ".refit.assoc.txt");
     std::string meta_file = options_.out_prefix + ".refit.meta.txt";
@@ -46,9 +57,7 @@ void RepeatabilityModel::scanRefitValidation() {
         << "\ninit_Vg\t" << v_g_ << "\ninit_Vpe\t" << v_pe_ << "\ninit_Ve\t" << v_e_ << "\n"; }
 
     Eigen::VectorXf g_raw; int written = 0, skipped_no_info = 0, skipped_solver = 0, skipped_nonpositive = 0;
-    for (int j = 0; j < variants_to_run; ++j) {
-        if (!options_.extract_set.empty() && options_.extract_set.find(bim[j].id) == options_.extract_set.end()) continue;
-        if (!options_.exclude_set.empty() && options_.exclude_set.find(bim[j].id) != options_.exclude_set.end()) continue;
+    for (int j : eligible_variants) {
         plink_reader_->getSnpGenotypes(j, g_raw);
         if (g_raw.size() == 0) { skipped_no_info++; continue; }
         double sum_g = 0.0; int valid_n = 0;

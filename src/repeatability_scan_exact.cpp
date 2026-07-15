@@ -154,6 +154,8 @@ static void processExactSubjectBlock(const Eigen::MatrixXd& G_block,
 template <typename ResultAppender>
 static void scanPlinkExact(const PlinkReader& reader,
                            const std::string& chrom_filter,
+                           long long scan_from_bp,
+                           long long scan_to_bp,
                            double min_maf,
                            double min_hwe,
                            const std::unordered_set<std::string>& extract_set,
@@ -172,6 +174,8 @@ static void scanPlinkExact(const PlinkReader& reader,
         snp_indices.reserve(end - start);
         for (int j = start; j < end; ++j) {
             if (!chrom_filter.empty() && bim[j].chrom != chrom_filter) continue;
+            if (scan_from_bp >= 0 && bim[j].bp_pos < scan_from_bp) continue;
+            if (scan_to_bp >= 0 && bim[j].bp_pos > scan_to_bp) continue;
             if (!extract_set.empty() && extract_set.find(bim[j].id) == extract_set.end()) continue;
             if (!exclude_set.empty() && exclude_set.find(bim[j].id) != exclude_set.end()) continue;
             snp_indices.push_back(j);
@@ -227,8 +231,10 @@ static void scanPlinkExact(const PlinkReader& reader,
 
 template <typename Reader, typename ReadFn, typename ResultAppender>
 static void scanSequentialExact(Reader& reader, size_t m, ReadFn read_variant,
-                                 const std::string& chrom_filter,
-                                 double min_maf,
+                                  const std::string& chrom_filter,
+                                  long long scan_from_bp,
+                                  long long scan_to_bp,
+                                  double min_maf,
                                  const std::unordered_set<std::string>& extract_set,
                                  const std::unordered_set<std::string>& exclude_set,
                                  const std::vector<int>& keep_subject_indices,
@@ -251,6 +257,8 @@ static void scanSequentialExact(Reader& reader, size_t m, ReadFn read_variant,
             if (!ok) { hit_eof = true; break; }
             variants_read++;
             if (!chrom_filter.empty() && d.chrom != chrom_filter) continue;
+            if (scan_from_bp >= 0 && static_cast<long long>(d.pos) < scan_from_bp) continue;
+            if (scan_to_bp >= 0 && static_cast<long long>(d.pos) > scan_to_bp) continue;
             if (!extract_set.empty() && extract_set.find(d.rsid) == extract_set.end()) continue;
             if (!exclude_set.empty() && exclude_set.find(d.rsid) != exclude_set.end()) continue;
             chunk_data.push_back(std::move(d));
@@ -564,16 +572,19 @@ void RepeatabilityModel::scanExact() {
             scanSequentialExact(*bgen_reader_, bgen_reader_->getNumVariants(),
                 [&](std::string& chrom, std::string& rsid, uint32_t& pos, std::string& ref, std::string& alt, Eigen::VectorXf& dosage) {
                     return bgen_reader_->readVariant(chrom, rsid, pos, ref, alt, dosage);
-                }, chrom_filter, options_.min_maf, options_.extract_set, options_.exclude_set,
+                }, chrom_filter, options_.scan_from_bp, options_.scan_to_bp,
+                options_.min_maf, options_.extract_set, options_.exclude_set,
                 keep_subject_indices, obs_to_subject, cache, n_subjects_keep, append_result);
         } else if (is_pgen_) {
             scanSequentialExact(*pgen_reader_, pgen_reader_->getNumVariants(),
                 [&](std::string& chrom, std::string& rsid, uint32_t& pos, std::string& ref, std::string& alt, Eigen::VectorXf& dosage) {
                     return pgen_reader_->readVariant(chrom, rsid, pos, ref, alt, dosage);
-                }, chrom_filter, options_.min_maf, options_.extract_set, options_.exclude_set,
+                }, chrom_filter, options_.scan_from_bp, options_.scan_to_bp,
+                options_.min_maf, options_.extract_set, options_.exclude_set,
                 keep_subject_indices, obs_to_subject, cache, n_subjects_keep, append_result);
         } else {
-            scanPlinkExact(*plink_reader_, chrom_filter, options_.min_maf, options_.min_hwe,
+            scanPlinkExact(*plink_reader_, chrom_filter, options_.scan_from_bp, options_.scan_to_bp,
+                           options_.min_maf, options_.min_hwe,
                            options_.extract_set, options_.exclude_set,
                            keep_subject_indices, obs_to_subject, cache, n_subjects_keep, append_result);
         }
@@ -593,12 +604,14 @@ void RepeatabilityModel::scanExact() {
 
     if (!loco_enabled) {
         std::cout << "Repeatability GWAS: running exact global scan on " << n_subjects_keep << " subjects and " << n_obs << " records.\n";
-        scan_with_subject_grm(options_.mixed_precision ? G_subject_global_f32.cast<double>() : G_subject_global, "");
+        scan_with_subject_grm(options_.mixed_precision ? G_subject_global_f32.cast<double>() : G_subject_global,
+                              options_.scan_chrom);
     } else if (use_single_pass_loco) {
         std::cout << "Repeatability GWAS: running exact LOCO scan on " << chroms.size() << " chromosomes (single-pass GRM).\n";
         #pragma omp parallel for schedule(dynamic, 1) num_threads(options_.n_threads)
         for (size_t i = 0; i < chroms.size(); ++i) {
             const auto& chrom = chroms[i];
+            if (!options_.scan_chrom.empty() && chrom != options_.scan_chrom) continue;
             #pragma omp critical
             { std::cout << "  Starting LOCO chromosome " << chrom << std::endl; cache_entries.push_back({"chr_" + sanitizeChromLabel(chrom), "single_pass"}); }
             double S_loco = S_global - chr_scaling[i];
@@ -616,6 +629,7 @@ void RepeatabilityModel::scanExact() {
         std::vector<std::string> chr_cache_st2(chroms.size(), "disabled");
 
         for (size_t i = 0; i < chroms.size(); ++i) {
+            if (!options_.scan_chrom.empty() && chroms[i] != options_.scan_chrom) continue;
             std::cout << "  Precomputing GRM for chromosome " << chroms[i] << std::endl;
             double S_chr = 0.0; std::string status = "disabled";
             Eigen::MatrixXd G_chr = compute_or_load_subject_grm(chroms[i], &S_chr, nullptr, &status);
@@ -628,6 +642,7 @@ void RepeatabilityModel::scanExact() {
         #pragma omp parallel for schedule(dynamic, 1) if(can_parallelize) num_threads(options_.n_threads)
         for (size_t i = 0; i < chroms.size(); ++i) {
             const auto& chrom = chroms[i];
+            if (!options_.scan_chrom.empty() && chrom != options_.scan_chrom) continue;
             #pragma omp critical
             { std::cout << "  Starting LOCO chromosome " << chrom << std::endl; cache_entries.push_back({"chr_" + sanitizeChromLabel(chrom), chr_cache_st2[i]}); }
             double S_loco = S_global - chr_scaling2[i];

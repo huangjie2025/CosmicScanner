@@ -1,6 +1,6 @@
 # CosmicScanner Source Package
 
-CosmicScanner v1.1.0 is a focused, reproducible source release for the first
+CosmicScanner v1.1.1 is a focused, reproducible source release for the first
 manuscript. It contains four supported functions:
 
 - Single-trait GWAS
@@ -26,6 +26,10 @@ results depend on the selected vendor runtime:
 ```bash
 COSMICSCANNER_ENABLE_BLAS=ON bash scripts/build.sh
 ```
+
+Supported genotype inputs are PLINK 1 BED, PLINK 2 PGEN, and BGEN v1.2 Layout 2.
+The BGEN reader currently requires diploid, unphased, biallelic variants with
+8-bit or 16-bit probabilities; unsupported layouts and encodings fail explicitly.
 
 ## Documentation
 

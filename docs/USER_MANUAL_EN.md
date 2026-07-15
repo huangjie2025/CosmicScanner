@@ -1,8 +1,8 @@
-# CosmicScanner v1.1.0 User Manual
+# CosmicScanner v1.1.1 User Manual
 
 ## Overview
 
-CosmicScanner v1.1.0 is a focused source release supporting four core workflows
+CosmicScanner v1.1.1 is a focused source release supporting four core workflows
 for the first manuscript:
 
 - **Single-trait GWAS**: Linear mixed model association analysis for a single
@@ -31,8 +31,8 @@ matching, covariate design, variant filtering, and GRM construction.
 ### Building from Source
 
 ```bash
-tar -xzf CosmicScanner-v1.1.0-source.tar.gz
-cd CosmicScanner-v1.1.0-source
+git clone --branch v1.1.1 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
+cd CosmicScanner
 
 # Default build (Eigen native solvers)
 bash scripts/build.sh
@@ -48,14 +48,8 @@ cmake --build build --target cosmicscanner -j$(nproc)
 If CMake cannot find Eigen3, set CMAKE_PREFIX_PATH to the directory
 containing share/eigen3/cmake/Eigen3Config.cmake.
 
-### Using the Linux Binary Package
-
-```bash
-tar -xzf CosmicScanner-v1.1.0-linux-x86_64.tar.gz
-cd CosmicScanner-v1.1.0-linux-x86_64
-export PATH=$PWD/bin:$PATH
-cosmicscanner --help
-```
+Prebuilt Linux binaries are not currently published. Use the source build above;
+the GitHub release provides the archived source corresponding to each tag.
 
 ### Build Verification
 
@@ -149,9 +143,9 @@ Missing values: NA or -9.
 ### Single-trait
 
 ```bash
-cosmicscanner --bfile data --pheno trait.txt --mpheno 1 \\
+cosmicscanner --bfile data --pheno trait.txt --mpheno 1 \
   --gwas --scan-tier semi --out results/single
-cosmicscanner --bfile data --pheno trait.txt --mpheno 1 \\
+cosmicscanner --bfile data --pheno trait.txt --mpheno 1 \
   --gwas --scan-tier semi --no-loco --out results/global
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier approx --out app
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi --out semi
@@ -163,38 +157,38 @@ cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi \
 ### Multivariate
 
 ```bash
-cosmicscanner --bfile data --pheno traits.txt \\
-  --mpheno-list 1,2 --multivariate --gwas --scan-tier semi --no-loco \\
+cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2 --multivariate --gwas --scan-tier semi --no-loco \
   --out results/mv
-cosmicscanner --bfile data --pheno traits.txt \\
-  --mpheno-list 1,2,3 --multivariate --gwas --scan-tier semi --no-loco \\
+cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2,3 --multivariate --gwas --scan-tier semi --no-loco \
   --out results/mv3
-cosmicscanner --bfile data --pheno traits.txt \\
-  --mpheno-list 1,2 --multivariate --gwas --scan-tier exact --no-loco \\
+cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2 --multivariate --gwas --scan-tier exact --no-loco \
   --out results/mv_exact
 ```
 
 ### Repeatability
 
 ```bash
-cosmicscanner --bfile data --pheno repeated.txt \\
-  --tpheno 1 --mpheno 2 \\
-  --repeatability-model --repeatability-mode exact \\
+cosmicscanner --bfile data --pheno repeated.txt \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode exact \
   --gwas --scan-tier semi --out results/rep
-cosmicscanner --bfile data --pheno repeated.txt \\
-  --tpheno 1 --mpheno 2 \\
-  --repeatability-model --repeatability-mode fast \\
-  --gwas --scan-tier approx --out results/rep_fast
+cosmicscanner --bfile data --pheno repeated.txt \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode fast \
+  --gwas --out results/rep_fast
 ```
 
 ### A/G/H
 
 ```bash
-cosmicscanner --bfile data --make-agh \\
+cosmicscanner --bfile data --make-agh \
   --ped pedigree.txt --out results/agh
-cosmicscanner --bfile data --make-agh \\
-  --ped pedigree.txt \\
-  --genotyped-list genotyped.txt \\
+cosmicscanner --bfile data --make-agh \
+  --ped pedigree.txt \
+  --genotyped-list genotyped.txt \
   --blend-g 0.05 --out results/agh
 ```
 
@@ -245,4 +239,4 @@ id_mapping_verified, hinv_symmetry_max_abs.
 
 ## Version
 
-v1.1.0. See CITATION.cff for citation metadata.
+v1.1.1. See CITATION.cff for citation metadata.

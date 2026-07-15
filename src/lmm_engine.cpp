@@ -1167,8 +1167,8 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
         if (!ok) break;
 
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
-        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
+        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
+        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
 
@@ -1266,8 +1266,8 @@ void LmmEngine::scanEB(PgenReader& reader, std::vector<GwasResult>& results, con
     for (size_t j = 0; j < m; ++j) {
         if (!reader.readVariant(chrom, rsid, pos, ref, alt, dosage)) break;
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
-        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
+        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
+        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
         double sum_g = 0.0;
@@ -1368,8 +1368,8 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
         if (!ok) break;
 
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
-        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
+        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
+        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
 

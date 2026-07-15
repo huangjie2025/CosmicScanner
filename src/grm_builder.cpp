@@ -162,7 +162,8 @@ void GrmBuilder::compute(const PlinkReader& reader, const std::vector<int>& keep
 
         // 1. First Pass: Compute Stats (Mean, Variance, Filter)
         std::vector<float> snp_means(current_block_size * num_pops);
-        std::vector<bool> snp_valid(current_block_size, false);
+        // vector<bool> packs bits, so concurrent writes to distinct SNPs can race.
+        std::vector<uint8_t> snp_valid(current_block_size, 0);
         std::vector<float> snp_scales(current_block_size * num_pops, 1.0f);
         std::vector<float> snp_2pq(current_block_size, 0.0f);
         std::vector<float> snp_weights_block(current_block_size, 1.0f);
@@ -262,14 +263,9 @@ void GrmBuilder::compute(const PlinkReader& reader, const std::vector<int>& keep
                 }
             }
 
-            snp_valid[j] = true;
+            snp_valid[j] = 1;
             valid_count_in_block++;
         }
-
-        if (valid_count_in_block == 0) continue;
-
-        // 2. Second Pass: Fill Z Matrix
-        Eigen::MatrixXd Z(n, valid_count_in_block);
 
         std::vector<int> block_to_valid(current_block_size, -1);
         int cur_valid = 0;
@@ -282,7 +278,15 @@ void GrmBuilder::compute(const PlinkReader& reader, const std::vector<int>& keep
             }
         }
 
-        #pragma omp parallel for
+        if (cur_valid != valid_count_in_block) {
+            throw std::runtime_error("Internal error: inconsistent valid SNP count while building GRM");
+        }
+        if (cur_valid == 0) continue;
+
+        // Zero initialization is defensive: every valid column should be fully populated below.
+        Eigen::MatrixXd Z = Eigen::MatrixXd::Zero(n, cur_valid);
+
+        #pragma omp parallel for if(!options.compute_homo_hete)
         for (long long j = 0; j < (long long)current_block_size; ++j) {
             if (!snp_valid[j]) continue;
 
@@ -360,7 +364,7 @@ void GrmBuilder::compute(const PlinkReader& reader, const std::vector<int>& keep
         G.noalias() += Z * Z.transpose();
 
         total_sum_2pq += block_sum_2pq;
-        total_valid_snps += valid_count_in_block;
+        total_valid_snps += cur_valid;
 
         std::cout << "\rProcessed block " << b + 1 << "/" << num_blocks
                   << " (Valid SNPs: " << total_valid_snps << ")" << std::flush;
@@ -515,7 +519,8 @@ GrmBuilder::SplitGrmResult GrmBuilder::computeSplit(
 
         // 1. First Pass: Compute Stats (Mean, Variance, Filter)
         std::vector<float> snp_means(current_block_size * num_pops);
-        std::vector<bool> snp_valid(current_block_size, false);
+        // vector<bool> packs bits, so concurrent writes to distinct SNPs can race.
+        std::vector<uint8_t> snp_valid(current_block_size, 0);
         std::vector<float> snp_scales(current_block_size * num_pops, 1.0f);
         std::vector<float> snp_2pq(current_block_size, 0.0f);
         std::vector<float> snp_weights_block(current_block_size, 1.0f);
@@ -610,18 +615,13 @@ GrmBuilder::SplitGrmResult GrmBuilder::computeSplit(
                 }
             }
 
-            snp_valid[j] = true;
+            snp_valid[j] = 1;
             // Record which chromosome this valid SNP belongs to
             auto it = chrom_to_idx.find(bim[global_idx].chrom);
             if (it != chrom_to_idx.end())
                 snp_chrom_idx[j] = it->second;
             valid_count_in_block++;
         }
-
-        if (valid_count_in_block == 0) continue;
-
-        // 2. Second Pass: Fill Z Matrix
-        Eigen::MatrixXd Z(n, valid_count_in_block);
 
         std::vector<int> block_to_valid(current_block_size, -1);
         int cur_valid = 0;
@@ -634,7 +634,15 @@ GrmBuilder::SplitGrmResult GrmBuilder::computeSplit(
             }
         }
 
-        #pragma omp parallel for
+        if (cur_valid != valid_count_in_block) {
+            throw std::runtime_error("Internal error: inconsistent valid SNP count while building split GRM");
+        }
+        if (cur_valid == 0) continue;
+
+        // Zero initialization is defensive: every valid column should be fully populated below.
+        Eigen::MatrixXd Z = Eigen::MatrixXd::Zero(n, cur_valid);
+
+        #pragma omp parallel for if(!options.compute_homo_hete)
         for (long long j = 0; j < (long long)current_block_size; ++j) {
             if (!snp_valid[j]) continue;
 
@@ -742,7 +750,7 @@ GrmBuilder::SplitGrmResult GrmBuilder::computeSplit(
         }
 
         total_sum_2pq += block_sum_2pq;
-        total_valid_snps += valid_count_in_block;
+        total_valid_snps += cur_valid;
 
         std::cout << "\rProcessed block " << b + 1 << "/" << num_blocks
                   << " (Valid SNPs: " << total_valid_snps << ")" << std::flush;

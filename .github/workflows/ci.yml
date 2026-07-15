@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libeigen3-dev libzstd-dev zlib1g-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Critical regressions
+        run: ctest --test-dir build --output-on-failure
+      - name: Release smoke validation
+        run: COSMICSCANNER_BUILD_JOBS=2 ./scripts/validate_release.sh

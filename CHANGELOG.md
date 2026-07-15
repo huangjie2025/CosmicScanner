@@ -6,6 +6,18 @@
 - `1.0.0` and `1.0.5` below are retrospective internal milestones inferred from
   Git history, not earlier public releases or Git tags.
 
+## v1.1.1 (2026-07-15)
+
+- 修复 PLINK GRM 并行构建中 `std::vector<bool>` 位压缩写入导致的数据竞争、
+  有效 SNP 计数不一致和未初始化矩阵列问题。
+- 修复 `compute_homo_hete` 在 SNP 并行循环中更新样本计数器的数据竞争。
+- 重复力 GWAS 的 exact/approx/semi/fast/STCG 路径现在统一遵守
+  `--chr`、`--from-bp`、`--to-bp`、`--extract` 和 `--exclude`。
+- 增加 1/2/4/8 线程 GRM 确定性测试、重复力区域过滤回归测试、CTest 和
+  GitHub Actions CI，并加入 PLINK/PGEN/BGEN 格式等价性测试数据。
+- 修复 PGEN 1-bit + difflist 解码将 missing code 当作剂量值的问题。
+- 增加 `--version`、基因型输入互斥校验，并将 BGEN sample 数量不匹配改为错误。
+
 ## v1.1.0-source (2026-07-14)
 
 - 首发源码包只保留单性状 GWAS、多性状 GWAS、重复力 GWAS 和 A/G/H 矩阵构建四项功能。

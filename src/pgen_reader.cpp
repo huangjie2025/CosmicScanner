@@ -544,7 +544,8 @@ void PgenReader::decodeOneVariant(const uint8_t* data_ptr, size_t len, uint8_t v
 
             for (uint32_t i = 0; i < n; i++) {
                 bool in_cat_b = (ptr[i / 8] >> (i % 8)) & 1;
-                dosage[i] = in_cat_b ? cat_b : cat_a;
+                uint8_t val = in_cat_b ? cat_b : cat_a;
+                dosage[i] = val <= 2 ? (double)val : std::numeric_limits<double>::quiet_NaN();
             }
             ptr += bit_nbytes;
 
@@ -557,7 +558,8 @@ void PgenReader::decodeOneVariant(const uint8_t* data_ptr, size_t len, uint8_t v
                     for (size_t di = 0; di < diff_samples.size() && di < diff_vals.size(); di++) {
                         uint32_t sid = diff_samples[di];
                         if (sid < n) {
-                            dosage[sid] = (double)diff_vals[di];
+                            uint8_t val = diff_vals[di];
+                            dosage[sid] = val <= 2 ? (double)val : std::numeric_limits<double>::quiet_NaN();
                         }
                     }
                 }
@@ -703,7 +705,8 @@ void PgenReader::decodeOneVariantFloat(const uint8_t* data_ptr, size_t len, uint
             }
             for (uint32_t i = 0; i < n; i++) {
                 bool in_cat_b = (ptr[i / 8] >> (i % 8)) & 1;
-                dosage[i] = (float)(in_cat_b ? cat_b : cat_a);
+                uint8_t val = in_cat_b ? cat_b : cat_a;
+                dosage[i] = val <= 2 ? (float)val : std::numeric_limits<float>::quiet_NaN();
             }
             ptr += bit_nbytes;
             size_t remaining = len - (ptr - data_ptr);
@@ -715,7 +718,8 @@ void PgenReader::decodeOneVariantFloat(const uint8_t* data_ptr, size_t len, uint
                     for (size_t di = 0; di < diff_samples.size() && di < diff_vals.size(); di++) {
                         uint32_t sid = diff_samples[di];
                         if (sid < n) {
-                            dosage[sid] = (float)diff_vals[di];
+                            uint8_t val = diff_vals[di];
+                            dosage[sid] = val <= 2 ? (float)val : std::numeric_limits<float>::quiet_NaN();
                         }
                     }
                 }

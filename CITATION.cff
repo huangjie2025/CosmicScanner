@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use CosmicScanner, please cite this software and the associated manuscript."
 title: "CosmicScanner: Gaussian mixed-model association analysis and relationship-matrix construction"
 type: software
-version: "1.1.0"
-date-released: "2026-07-14"
+version: "1.1.1"
+date-released: "2026-07-15"
 authors:
   - family-names: "Huang"
     given-names: "Jie"

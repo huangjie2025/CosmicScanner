@@ -55,6 +55,9 @@ public:
         std::string exclude_file;
         std::unordered_set<std::string> extract_set;
         std::unordered_set<std::string> exclude_set;
+        std::string scan_chrom;
+        long long scan_from_bp = -1;
+        long long scan_to_bp = -1;
         bool use_covariate_projection = true;
         EigenVce::NullSolver lmm_null_solver = EigenVce::NullSolver::Brent;
         int reml_maxit = 50;
@@ -121,6 +124,7 @@ private:
     double vce_time_sec_ = 0.0;
     double scan_vbuild_time_sec_ = 0.0;
     double scan_snp_time_sec_ = 0.0;
+    bool used_stcg_vce_ = false;
 
     void loadPhenotype();
     void loadCovariates();

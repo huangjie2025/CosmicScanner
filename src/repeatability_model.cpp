@@ -77,11 +77,17 @@ RepeatabilityModel::Options RepeatabilityModel::Options::fromConfig(const GwasCo
     if (opts.scan_tier == "exact") opts.refit_validation = true;
     opts.refit_limit = cfg.repeatability_refit_limit;
     opts.grm_cache_prefix = cfg.repeatability_grm_cache_prefix;
+    if (!opts.grm_cache_prefix.empty()) {
+        throw std::runtime_error("--repeatability-grm-cache is disabled until cache metadata can validate genotype and GRM settings");
+    }
     opts.weight_file = cfg.repeatability_weight_file;
     opts.extract_file = cfg.extract_file;
     opts.exclude_file = cfg.exclude_file;
     opts.extract_set = load_repeatability_snp_id_set(cfg.extract_file);
     opts.exclude_set = load_repeatability_snp_id_set(cfg.exclude_file);
+    opts.scan_chrom = cfg.scan_chr;
+    opts.scan_from_bp = cfg.scan_from_bp;
+    opts.scan_to_bp = cfg.scan_to_bp;
     opts.use_covariate_projection = cfg.use_covariate_projection;
     opts.lmm_null_solver = parse_repeatability_lmm_null_solver(cfg.lmm_null_solver);
     opts.reml_maxit = cfg.reml_maxit;
@@ -562,6 +568,7 @@ void RepeatabilityModel::buildMMEComponents() {
 }
 
 void RepeatabilityModel::runVCE() {
+    used_stcg_vce_ = false;
     bool skip_vce = (options_.reml_vg >= 0.0 && options_.reml_vpe >= 0.0 && options_.reml_ve >= 0.0);
     if (skip_vce) {
         v_g_ = options_.reml_vg; v_pe_ = options_.reml_vpe; v_e_ = options_.reml_ve;
@@ -575,11 +582,18 @@ void RepeatabilityModel::runVCE() {
     // Use matrix-free STCG VCE for large PLINK repeatability jobs. This avoids
     // fragile dense subject-level eigendecomposition while keeping exact scan
     // available after variance components are estimated.
-    bool use_stcg_vce = (!is_bgen_ && !is_pgen_ && plink_reader_ &&
-                         (options_.repeatability_mode == RepeatabilityMode::STCG ||
-                          (options_.repeatability_mode == RepeatabilityMode::Auto && n_recs_kept_ > 80000)));
+    bool use_stcg_vce = (options_.extract_set.empty() && options_.exclude_set.empty()
+                         && !is_bgen_ && !is_pgen_ && plink_reader_ &&
+                          (options_.repeatability_mode == RepeatabilityMode::STCG ||
+                           (options_.repeatability_mode == RepeatabilityMode::Auto && n_recs_kept_ > 80000)));
+    if ((options_.repeatability_mode == RepeatabilityMode::STCG
+         || (options_.repeatability_mode == RepeatabilityMode::Auto && n_recs_kept_ > 80000))
+        && (!options_.extract_set.empty() || !options_.exclude_set.empty())) {
+        std::cout << "  SNP list filtering requested; using the filtered GRM VCE path instead of matrix-free STCG VCE.\n";
+    }
 
     if (use_stcg_vce) {
+        used_stcg_vce_ = true;
         // STCG_VCE: matrix-free VCE using stochastic trace + PCG
         std::cout << "  Using STCG_VCE (matrix-free) for null model...\n";
         Eigen::MatrixXd Xd = X_obs_.cast<double>();
@@ -1491,10 +1505,17 @@ void RepeatabilityModel::run() {
             report.strategy_reason = "R2: Aggregated mean + Eigen null";
             break;
         case RepeatabilityMode::STCG:
-            report.strategy = VceStrategy::MatrixFree;
-            report.solver = SolverType::STCG;
-            report.trace_mode = TraceMode::Hutch;
-            report.strategy_reason = "R3: Matrix-free STCG";
+            if (used_stcg_vce_) {
+                report.strategy = VceStrategy::MatrixFree;
+                report.solver = SolverType::STCG;
+                report.trace_mode = TraceMode::Hutch;
+                report.strategy_reason = "R3: Matrix-free STCG";
+            } else {
+                report.strategy = VceStrategy::VBased;
+                report.solver = SolverType::DenseVEigen;
+                report.trace_mode = TraceMode::Exact;
+                report.strategy_reason = "R3 scan with filtered-GRM VCE fallback";
+            }
             break;
         default: break;
     }
