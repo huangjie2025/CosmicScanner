@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <ctime>
 #include <sstream>
+#include <cstdio>
 
 namespace cosmic {
 

@@ -19,6 +19,10 @@ fi
 
 cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
 cmake --build "${BUILD_DIR}" --target cosmicscanner --parallel "${JOBS}"
-"${BUILD_DIR}/cosmicscanner" --help >/dev/null
+EXE_SUFFIX=""
+case "${OSTYPE:-}" in
+  msys*|cygwin*) EXE_SUFFIX=".exe" ;;
+esac
+"${BUILD_DIR}/cosmicscanner${EXE_SUFFIX}" --help >/dev/null
 
-echo "Build passed: ${BUILD_DIR}/cosmicscanner"
+echo "Build passed: ${BUILD_DIR}/cosmicscanner${EXE_SUFFIX}"

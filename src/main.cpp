@@ -4,7 +4,12 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#else
 #include <sys/resource.h>
+#endif
 #include <omp.h>
 
 #include "config.h"
@@ -19,6 +24,24 @@
 #endif
 
 namespace {
+
+double peak_memory_mb() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS counters{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) {
+        return static_cast<double>(counters.PeakWorkingSetSize) / (1024.0 * 1024.0);
+    }
+    return 0.0;
+#else
+    struct rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0) return 0.0;
+#ifdef __APPLE__
+    return static_cast<double>(usage.ru_maxrss) / (1024.0 * 1024.0);
+#else
+    return static_cast<double>(usage.ru_maxrss) / 1024.0;
+#endif
+#endif
+}
 
 std::vector<int> parse_int_list(const std::string& s) {
     std::vector<int> out;
@@ -181,10 +204,8 @@ int main(int argc, char** argv) {
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
-        struct rusage usage;
-        getrusage(RUSAGE_SELF, &usage);
         std::cout << "Total computation time: " << elapsed.count() << " seconds\n";
-        std::cout << "Peak memory usage: " << (usage.ru_maxrss / 1024.0) << " MB\n";
+        std::cout << "Peak memory usage: " << peak_memory_mb() << " MB\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";

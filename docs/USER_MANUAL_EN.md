@@ -1,8 +1,8 @@
-# CosmicScanner v1.1.1 User Manual
+# CosmicScanner v1.1.2 User Manual
 
 ## Overview
 
-CosmicScanner v1.1.1 is a focused source release supporting four core workflows
+CosmicScanner v1.1.2 is a focused release supporting four core workflows
 for the first manuscript:
 
 - **Single-trait GWAS**: Linear mixed model association analysis for a single
@@ -21,7 +21,7 @@ matching, covariate design, variant filtering, and GRM construction.
 
 ### System Requirements
 
-- Linux x86_64
+- Linux x86_64, macOS, or Windows x86_64
 - CMake 3.15 or newer
 - C++17 compiler (GCC 8+, Clang 10+)
 - Eigen 3
@@ -31,7 +31,7 @@ matching, covariate design, variant filtering, and GRM construction.
 ### Building from Source
 
 ```bash
-git clone --branch v1.1.1 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
+git clone --branch v1.1.2 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
 cd CosmicScanner
 
 # Default build (Eigen native solvers)
@@ -42,14 +42,23 @@ COSMICSCANNER_ENABLE_BLAS=ON bash scripts/build.sh
 
 # Custom build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target cosmicscanner -j$(nproc)
+cmake --build build --target cosmicscanner --parallel
 ```
 
 If CMake cannot find Eigen3, set CMAKE_PREFIX_PATH to the directory
 containing share/eigen3/cmake/Eigen3Config.cmake.
 
-Prebuilt Linux binaries are not currently published. Use the source build above;
-the GitHub release provides the archived source corresponding to each tag.
+### Prebuilt Packages
+
+GitHub Releases provide Linux, macOS, and Windows archives. Extract an archive
+and run `bin/cosmicscanner` (`bin/cosmicscanner.exe` on Windows). The Windows
+package includes its UCRT64 runtime DLLs; the macOS package includes required
+non-system dylibs. These packages are built and tested by GitHub Actions.
+
+For a macOS source build, install dependencies with
+`brew install eigen libomp zstd`; see the CI workflow for the Apple Clang OpenMP
+configuration. For Windows source builds, use the documented MSYS2 UCRT64 GCC
+packages from `.github/workflows/ci.yml`.
 
 ### Build Verification
 
@@ -239,4 +248,4 @@ id_mapping_verified, hinv_symmetry_max_abs.
 
 ## Version
 
-v1.1.1. See CITATION.cff for citation metadata.
+v1.1.2. See CITATION.cff for citation metadata.

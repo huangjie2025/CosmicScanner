@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(CosmicScanner VERSION 1.1.1 LANGUAGES CXX)
+project(CosmicScanner VERSION 1.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,15 +70,28 @@ endif()
 add_executable(cosmicscanner ${GWAS_SOURCES})
 target_include_directories(cosmicscanner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(cosmicscanner PRIVATE Eigen3::Eigen OpenMP::OpenMP_CXX ZLIB::ZLIB ${COSMICSCANNER_ZSTD_TARGET} ${COSMICSCANNER_EXTRA_LIBS})
+if(WIN32)
+  target_link_libraries(cosmicscanner PRIVATE psapi)
+endif()
 target_compile_definitions(cosmicscanner PRIVATE ${COSMICSCANNER_EXTRA_DEFS})
 target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
+if(APPLE)
+  set_target_properties(cosmicscanner PROPERTIES INSTALL_RPATH "@loader_path/../lib")
+endif()
 
 install(TARGETS cosmicscanner RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES README.md LICENSE CHANGELOG.md CITATION.cff DESTINATION ${CMAKE_INSTALL_DATADIR}/cosmicscanner)
+install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/cosmicscanner/docs)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_test(
-    NAME critical_regressions
-    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test/run_critical_regressions.sh $<TARGET_FILE:cosmicscanner>
-  )
+  find_program(BASH_EXECUTABLE NAMES bash)
+  if(BASH_EXECUTABLE)
+    add_test(
+      NAME critical_regressions
+      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/run_critical_regressions.sh $<TARGET_FILE:cosmicscanner>
+    )
+  else()
+    message(WARNING "Bash not found; critical regression tests are unavailable")
+  endif()
 endif()

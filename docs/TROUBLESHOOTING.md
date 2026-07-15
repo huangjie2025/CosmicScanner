@@ -17,7 +17,7 @@ Install libomp-dev (Ubuntu) or libomp-devel (CentOS).
 Add --gwas or --make-agh to the command line.
 
 ### "Unsupported option in focused source build"
-The parameter is not in v1.1.1 scope. Run cosmicscanner --help for supported
+The parameter is not in v1.1.2 scope. Run cosmicscanner --help for supported
 options. RRM, threshold, survival, GxE, SKAT, BSLMM, biobank mode are excluded.
 
 ### "Missing value for --<option>"
@@ -64,7 +64,10 @@ Reduce samples/SNPs, use --chr to limit, avoid --scan-tier exact on large data.
 Build from source on the target system.
 
 ### Windows/macOS
-Not supported in v1.1.1. Requires conditional compilation for sys/resource.h.
+Use the matching v1.1.2 GitHub Release archive. Windows packages target x86_64
+UCRT64. On macOS, approve the downloaded executable in System Settings if
+Gatekeeper blocks an ad-hoc-signed archive. Source builds require Homebrew
+`eigen`, `libomp`, and `zstd` on macOS or MSYS2 UCRT64 dependencies on Windows.
 
 ## Getting Help
 

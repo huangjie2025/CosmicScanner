@@ -4,18 +4,136 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake g++ libeigen3-dev libzstd-dev zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libeigen3-dev libzstd-dev zlib1g-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --parallel 2
-      - name: Critical regressions
-        run: ctest --test-dir build --output-on-failure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build and test
+        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
       - name: Release smoke validation
-        run: COSMICSCANNER_BUILD_JOBS=2 ./scripts/validate_release.sh
+        run: COSMICSCANNER_BUILD_DIR="$PWD/build" COSMICSCANNER_SKIP_BUILD=1 ./scripts/validate_release.sh
+      - name: Package
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          cmake --install build --prefix package
+          package/bin/cosmicscanner --version
+          mkdir -p dist
+          tar -czf "dist/CosmicScanner-${VERSION}-linux-x86_64.tar.gz" -C package .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/*
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install eigen libomp ninja zstd
+      - name: Configure
+        run: |
+          OMP_PREFIX="$(brew --prefix libomp)"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen);$(brew --prefix zstd);${OMP_PREFIX}" \
+            -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" \
+            -DOpenMP_CXX_LIB_NAMES=omp \
+            -DOpenMP_CXX_INCLUDE_DIR="${OMP_PREFIX}/include" \
+            -DOpenMP_omp_LIBRARY="${OMP_PREFIX}/lib/libomp.dylib"
+      - name: Build and test
+        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
+      - name: Package
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          cmake --install build --prefix package
+          mkdir -p package/lib dist
+          otool -L package/bin/cosmicscanner | awk 'NR > 1 {print $1}' | while read -r dylib; do
+            case "${dylib}" in
+              /opt/homebrew/*|/usr/local/*)
+                base="$(basename "${dylib}")"
+                cp -L "${dylib}" "package/lib/${base}"
+                install_name_tool -change "${dylib}" "@loader_path/../lib/${base}" package/bin/cosmicscanner
+                ;;
+              @rpath/*)
+                base="$(basename "${dylib}")"
+                for prefix in "$(brew --prefix libomp)" "$(brew --prefix zstd)"; do
+                  if [[ -f "${prefix}/lib/${base}" ]]; then
+                    cp -L "${prefix}/lib/${base}" "package/lib/${base}"
+                  fi
+                done
+                ;;
+            esac
+          done
+          for dylib in package/lib/*.dylib; do
+            [[ -e "${dylib}" ]] || continue
+            install_name_tool -id "@loader_path/$(basename "${dylib}")" "${dylib}"
+            codesign --force --sign - "${dylib}"
+          done
+          codesign --force --sign - package/bin/cosmicscanner
+          package/bin/cosmicscanner --version
+          tar -czf "dist/CosmicScanner-${VERSION}-macos-$(uname -m).tar.gz" -C package .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-eigen3
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-zstd
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build and test
+        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
+      - name: Package
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          cmake --install build --prefix package
+          ldd package/bin/cosmicscanner.exe | awk '$3 ~ /^\/ucrt64\/bin\// {print $3}' | while read -r dll; do
+            cp "${dll}" package/bin/
+          done
+          package/bin/cosmicscanner.exe --version
+          mkdir -p dist
+          cmake -E tar cf "dist/CosmicScanner-${VERSION}-windows-x86_64.zip" --format=zip -- package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

@@ -32,7 +32,7 @@ assert_p_equivalent() {
        END { if (seen != 2) exit 1 }' "${expected}" "${actual}"
 }
 
-test "$("${BIN}" --version)" = "CosmicScanner 1.1.1"
+test "$("${BIN}" --version)" = "CosmicScanner 1.1.2"
 if "${BIN}" --bfile x --pfile y --gwas >/dev/null 2>&1; then
   echo "Multiple genotype inputs were not rejected" >&2
   exit 1

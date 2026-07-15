@@ -11,6 +11,8 @@
 
 namespace cosmic {
 
+constexpr double kPi = 3.141592653589793238462643383279502884;
+
 static double safe_pos(double x) { return std::max(x, 1e-12); }
 static double clamp_value(double x, double lo, double hi) { return std::max(lo, std::min(hi, x)); }
 
@@ -355,7 +357,7 @@ void STCG_VCE::solve() {
         }
         
         double yPy = y.dot(Py);
-        double current_logL = -0.5 * (log_det_V + log_det_XtVinvX + yPy + (n_records - p) * std::log(2 * M_PI));
+        double current_logL = -0.5 * (log_det_V + log_det_XtVinvX + yPy + (n_records - p) * std::log(2 * kPi));
 
         if (cfg.verbose) {
             std::ostringstream ss;

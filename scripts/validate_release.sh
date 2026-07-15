@@ -5,8 +5,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${COSMICSCANNER_BUILD_DIR:-${ROOT_DIR}/build}"
 OUT_DIR="${COSMICSCANNER_VALIDATION_OUT:-${ROOT_DIR}/test/results}"
 
-"${ROOT_DIR}/scripts/build.sh"
-BIN="${BUILD_DIR}/cosmicscanner"
+if [[ "${COSMICSCANNER_SKIP_BUILD:-0}" != "1" ]]; then
+  "${ROOT_DIR}/scripts/build.sh"
+fi
+EXE_SUFFIX=""
+case "${OSTYPE:-}" in
+  msys*|cygwin*) EXE_SUFFIX=".exe" ;;
+esac
+BIN="${BUILD_DIR}/cosmicscanner${EXE_SUFFIX}"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}"
 

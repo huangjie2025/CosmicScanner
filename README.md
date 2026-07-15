@@ -1,6 +1,6 @@
 # CosmicScanner Source Package
 
-CosmicScanner v1.1.1 is a focused, reproducible source release for the first
+CosmicScanner v1.1.2 is a focused, reproducible release for the first
 manuscript. It contains four supported functions:
 
 - Single-trait GWAS
@@ -39,7 +39,7 @@ The BGEN reader currently requires diploid, unphased, biallelic variants with
 
 ## Dependencies
 
-- Linux x86_64
+- Linux x86_64, macOS, or Windows x86_64
 - CMake 3.15 or newer
 - C++17 compiler
 - Eigen3
@@ -48,6 +48,10 @@ The BGEN reader currently requires diploid, unphased, biallelic variants with
 
 If CMake cannot find Eigen3, set `CMAKE_PREFIX_PATH` to the prefix containing
 `share/eigen3/cmake/Eigen3Config.cmake`.
+
+Prebuilt archives for Linux, macOS, and Windows are attached to GitHub Releases.
+The Windows build uses the UCRT64 toolchain and includes its runtime DLLs. The
+macOS archive includes non-system dylibs required by the executable.
 
 ## Citation
 

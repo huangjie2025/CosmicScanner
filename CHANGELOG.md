@@ -6,6 +6,14 @@
 - `1.0.0` and `1.0.5` below are retrospective internal milestones inferred from
   Git history, not earlier public releases or Git tags.
 
+## v1.1.2 (2026-07-15)
+
+- 增加 Linux、macOS 和 Windows UCRT64 的 GitHub Actions 构建与回归测试。
+- 每次 CI 构建生成平台压缩包；版本 tag 自动创建 GitHub Release 并上传资产。
+- 修复 Windows 资源统计、只读内存映射、路径和可选 OpenBLAS 符号兼容问题。
+- 修复 macOS peak RSS 单位，并显式配置 Apple Clang + Homebrew libomp。
+- Windows 压缩包携带运行时 DLL；macOS 压缩包携带并重写非系统 dylib。
+
 ## v1.1.1 (2026-07-15)
 
 - 修复 PLINK GRM 并行构建中 `std::vector<bool>` 位压缩写入导致的数据竞争、

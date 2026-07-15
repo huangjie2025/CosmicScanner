@@ -8,6 +8,7 @@
 #include <cmath>
 #include <algorithm>
 #include <omp.h>
+#include <cstring>
 
 namespace cosmic {
 
@@ -136,7 +137,9 @@ void PgenReader::parseDirectory(const uint8_t* data, size_t size) {
 
     std::vector<size_t> block_offsets(num_blocks);
     for (uint32_t b = 0; b < num_blocks; b++) {
-        block_offsets[b] = (size_t)(*reinterpret_cast<const uint64_t*>(data + 12 + (size_t)b * 8));
+        uint64_t block_offset = 0;
+        std::memcpy(&block_offset, data + 12 + (size_t)b * 8, sizeof(block_offset));
+        block_offsets[b] = static_cast<size_t>(block_offset);
         if (block_offsets[b] >= size) throw std::runtime_error("PGEN variant block offset out of bounds");
     }
 
@@ -359,10 +362,10 @@ void PgenReader::readPgenHeader() {
 
     storage_mode = data[offset++];
 
-    n_variants_pgen = *reinterpret_cast<const uint32_t*>(data + offset);
+    std::memcpy(&n_variants_pgen, data + offset, sizeof(n_variants_pgen));
     offset += 4;
 
-    n_samples_pgen = *reinterpret_cast<const uint32_t*>(data + offset);
+    std::memcpy(&n_samples_pgen, data + offset, sizeof(n_samples_pgen));
     offset += 4;
 
     if (storage_mode == 0x01) {
@@ -382,7 +385,7 @@ void PgenReader::readPgenHeader() {
         if (offset + num_blocks * 8 > size) {
             throw std::runtime_error("PGEN offset table out of bounds");
         }
-        variant_block_offset = *reinterpret_cast<const uint64_t*>(data + offset);
+        std::memcpy(&variant_block_offset, data + offset, sizeof(variant_block_offset));
         current_offset = variant_block_offset;
 
         // Parse directory

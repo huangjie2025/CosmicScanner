@@ -18,7 +18,6 @@
 #include <unordered_set>
 #include <deque>
 #include <sstream>
-#include <sys/resource.h>
 #include <omp.h>
 #include "grm_builder.h"
 #include "pheno_reader.h"
@@ -29,11 +28,15 @@
 #include "eigen_vce.h"
 #include "lmm_engine.h"
 
+#ifndef _WIN32
 extern "C" {
     void openblas_set_num_threads(int num_threads) __attribute__((weak));
 }
+#endif
 
 namespace cosmic {
+
+constexpr double kPi = 3.141592653589793238462643383279502884;
 
 static EigenVce::NullSolver parse_repeatability_lmm_null_solver(const std::string& value) {
     if (value == "brent") return EigenVce::NullSolver::Brent;
@@ -205,7 +208,11 @@ static int drop_aliased_fixed_effects(Eigen::MatrixXf& X, FixedDesignG& fd) {
 }
 
 static void set_blas_threads(int n) {
+#ifndef _WIN32
     if (openblas_set_num_threads) openblas_set_num_threads(n);
+#else
+    (void)n;
+#endif
 }
 
 static double gamma_q(double a, double x) {
@@ -755,7 +762,7 @@ void RepeatabilityModel::runVCE() {
             Eigen::VectorXd beta = x_solver.solve(Xd_vce.transpose() * Vinv_y);
             Eigen::VectorXd Py = Vinv_y - VinvX * beta;
             double yPy = y_obs_.dot(Py);
-            double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * M_PI));
+            double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * kPi));
             return std::isfinite(logL) ? logL : dense_fail("logL_nonfinite");
         };
 
@@ -1032,7 +1039,7 @@ void RepeatabilityModel::runVCE() {
             Eigen::VectorXd beta = x_solver.solve(Xd_vce.transpose() * Vinv_y);
             Eigen::VectorXd Py = Vinv_y - VinvX * beta;
             double yPy = y_obs_.dot(Py);
-            double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * M_PI));
+            double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * kPi));
             if (!std::isfinite(logL)) {
                 debug_fast_fail("logL_nonfinite", &XtVinvX, &Dx);
                 return -std::numeric_limits<double>::infinity();
@@ -1152,7 +1159,7 @@ void RepeatabilityModel::runVCE() {
         Eigen::VectorXd beta = x_solver.solve(Xd_vce.transpose() * Vinvy);
         Eigen::VectorXd Py = Vinvy - VinvX * beta;
         double yPy = y_obs_.dot(Py);
-        double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * M_PI));
+        double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * kPi));
         return std::isfinite(logL) ? logL : -std::numeric_limits<double>::infinity();
     };
 
@@ -1228,7 +1235,7 @@ void RepeatabilityModel::runVCE() {
         Eigen::VectorXd beta = x_solver.solve(Xd_vce.transpose() * Vinvy);
         Eigen::VectorXd Py = Vinvy - VinvX * beta;
         double yPy = y_obs_.dot(Py);
-        double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * M_PI));
+        double logL = -0.5 * (log_det_v + log_det_xt + yPy + (n - p) * std::log(2.0 * kPi));
         return std::isfinite(logL) ? logL : -std::numeric_limits<double>::infinity();
     };
 

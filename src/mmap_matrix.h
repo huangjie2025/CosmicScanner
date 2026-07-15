@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <algorithm>
 #include <functional>
+#include <filesystem>
+#include <cstring>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
@@ -19,6 +21,13 @@
 #endif
 
 namespace cosmic {
+
+template <typename T>
+T readUnaligned(const char* ptr) {
+    T value;
+    std::memcpy(&value, ptr, sizeof(T));
+    return value;
+}
 
 // A simple read-only memory mapped file wrapper
 class MMapFile {
@@ -172,9 +181,9 @@ public:
         // Use parallel scan if possible?
         // Or just single thread. Memory bandwidth is bottleneck.
         for(size_t i=0; i<n_entries; ++i) {
-            const int* r_ptr = reinterpret_cast<const int*>(ptr + i*12);
-            int r = r_ptr[0];
-            int c = r_ptr[1];
+            const char* p = ptr + i * 12;
+            int r = readUnaligned<int32_t>(p);
+            int c = readUnaligned<int32_t>(p + 4);
             if (r > max_idx) max_idx = r;
             if (c > max_idx) max_idx = c;
         }
@@ -196,9 +205,9 @@ public:
         // Sequential scan
         for (long long i = 0; i < (long long)n_entries; ++i) {
             const char* p = ptr + i * 12;
-            int r = *reinterpret_cast<const int*>(p);
-            int c = *reinterpret_cast<const int*>(p + 4);
-            float v = *reinterpret_cast<const float*>(p + 8);
+            int r = readUnaligned<int32_t>(p);
+            int c = readUnaligned<int32_t>(p + 4);
+            float v = readUnaligned<float>(p + 8);
             callback(r, c, (double)v);
         }
     }
@@ -253,9 +262,9 @@ public:
 #endif
             for (long long i = 0; i < (long long)n_entries; ++i) {
                 const char* p = ptr + i * 12;
-                int r = *reinterpret_cast<const int*>(p);
-                int c = *reinterpret_cast<const int*>(p + 4);
-                float v = *reinterpret_cast<const float*>(p + 8);
+                int r = readUnaligned<int32_t>(p);
+                int c = readUnaligned<int32_t>(p + 4);
+                float v = readUnaligned<float>(p + 8);
                 
                 double val = (double)v * alpha;
                 
@@ -284,9 +293,9 @@ public:
 #endif
         for (long long i = 0; i < (long long)n_entries; ++i) {
             const char* p = ptr + i * 12;
-            int r = *reinterpret_cast<const int*>(p);
-            int c = *reinterpret_cast<const int*>(p + 4);
-            float v = *reinterpret_cast<const float*>(p + 8);
+            int r = readUnaligned<int32_t>(p);
+            int c = readUnaligned<int32_t>(p + 4);
+            float v = readUnaligned<float>(p + 8);
             
             if (r == c && r < diag.size()) {
                 // Potential race if multiple entries for same diagonal (unlikely for sparse unique triplets)
@@ -339,11 +348,11 @@ public:
 #endif
             for (long long i = 0; i < (long long)n_entries; ++i) {
                 const char* p = ptr + i * 12;
-                int r = *reinterpret_cast<const int*>(p);
-                int c = *reinterpret_cast<const int*>(p + 4);
+                int r = readUnaligned<int32_t>(p);
+                int c = readUnaligned<int32_t>(p + 4);
                 
                 if (r >= start_row && r < end_row && c >= start_row && c < end_row) {
-                    float v = *reinterpret_cast<const float*>(p + 8);
+                    float v = readUnaligned<float>(p + 8);
                     double val = (double)v * alpha;
                     
                     thread_blocks[tid](r - start_row, c - start_row) += val;

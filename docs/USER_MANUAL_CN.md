@@ -1,8 +1,8 @@
-# CosmicScanner v1.1.1 用户手册
+# CosmicScanner v1.1.2 用户手册
 
 ## 概述
 
-CosmicScanner v1.1.1 提供四项核心功能：
+CosmicScanner v1.1.2 提供四项核心功能：
 
 - **单性状 GWAS**：针对单个连续性状的线性混合模型关联分析
 - **多性状 GWAS**：多个相关连续性状的联合关联检验
@@ -12,17 +12,20 @@ CosmicScanner v1.1.1 提供四项核心功能：
 ## 安装
 
 ### 系统要求
-Linux x86_64, CMake 3.15+, C++17 编译器, Eigen3, OpenMP, zlib, zstd.
+Linux x86_64、macOS 或 Windows x86_64；源码构建需要 CMake 3.15+、
+C++17 编译器、Eigen3、OpenMP、zlib 和 zstd。
 
 ### 源码构建
 ```bash
-git clone --branch v1.1.1 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
+git clone --branch v1.1.2 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
 cd CosmicScanner
 bash scripts/build.sh
 ```
 
-当前暂不发布预编译 Linux 二进制包。请按上节从源码构建；GitHub Release
-提供与各 tag 对应的源码归档。
+GitHub Release 提供 Linux、macOS 和 Windows 压缩包。解压后运行
+`bin/cosmicscanner`，Windows 为 `bin/cosmicscanner.exe`。Windows 包包含
+UCRT64 运行时 DLL，macOS 包包含所需的非系统 dylib。所有包均由 GitHub
+Actions 在对应平台构建并测试。
 
 ## 输入格式
 
@@ -105,4 +108,4 @@ cosmicscanner --bfile data --make-agh --ped ped.txt --genotyped-list geno.txt --
 
 ## 版本
 
-v1.1.1。引用信息见 CITATION.cff。
+v1.1.2。引用信息见 CITATION.cff。

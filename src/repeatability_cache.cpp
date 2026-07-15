@@ -2,14 +2,12 @@
 
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "mmap_matrix.h"
 
 namespace cosmic {
 
@@ -31,33 +29,25 @@ std::string getCacheMetaPath(const std::string& prefix, const std::string& label
 namespace {
 
 struct MappedFloat32Matrix {
-    int fd = -1;
-    size_t mapped_bytes = 0;
-    void* mapped_ptr = MAP_FAILED;
+    MMapFile mapping;
     const float* data = nullptr;
     uint32_t rows = 0, cols = 0;
 
-    ~MappedFloat32Matrix() { close(); }
     void close() {
-        if (mapped_ptr != MAP_FAILED) { munmap(mapped_ptr, mapped_bytes); mapped_ptr = MAP_FAILED; }
-        if (fd >= 0) { ::close(fd); fd = -1; }
-        data = nullptr; mapped_bytes = 0; rows = 0; cols = 0;
+        mapping.close();
+        data = nullptr; rows = 0; cols = 0;
     }
     bool open(const std::string& file) {
         close();
-        fd = ::open(file.c_str(), O_RDONLY);
-        if (fd < 0) return false;
-        struct stat st;
-        if (fstat(fd, &st) != 0 || st.st_size < (off_t)(sizeof(uint32_t) * 2)) { close(); return false; }
-        mapped_bytes = (size_t)st.st_size;
-        mapped_ptr = mmap(nullptr, mapped_bytes, PROT_READ, MAP_PRIVATE, fd, 0);
-        if (mapped_ptr == MAP_FAILED) { close(); return false; }
-        const uint32_t* header = reinterpret_cast<const uint32_t*>(mapped_ptr);
-        rows = header[0]; cols = header[1];
+        try { mapping.open(file); } catch (const std::exception&) { return false; }
+        if (mapping.get_size() < sizeof(uint32_t) * 2) { close(); return false; }
+        const auto* bytes = static_cast<const uint8_t*>(mapping.get_data());
+        std::memcpy(&rows, bytes, sizeof(rows));
+        std::memcpy(&cols, bytes + sizeof(rows), sizeof(cols));
         if (rows == 0 || cols == 0) { close(); return false; }
         size_t expected = sizeof(uint32_t) * 2 + sizeof(float) * (size_t)rows * (size_t)cols;
-        if (mapped_bytes < expected) { close(); return false; }
-        data = reinterpret_cast<const float*>(header + 2);
+        if (mapping.get_size() < expected) { close(); return false; }
+        data = reinterpret_cast<const float*>(bytes + sizeof(uint32_t) * 2);
         return true;
     }
 };
