@@ -16,8 +16,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libeigen3-dev libzstd-dev zlib1g-dev
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - name: Build and test
-        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
       - name: Release smoke validation
         run: COSMICSCANNER_BUILD_DIR="$PWD/build" COSMICSCANNER_SKIP_BUILD=1 ./scripts/validate_release.sh
       - name: Package
@@ -48,8 +50,10 @@ jobs:
             -DOpenMP_CXX_LIB_NAMES=omp \
             -DOpenMP_CXX_INCLUDE_DIR="${OMP_PREFIX}/include" \
             -DOpenMP_omp_LIBRARY="${OMP_PREFIX}/lib/libomp.dylib"
-      - name: Build and test
-        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
       - name: Package
         run: |
           VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -105,8 +109,10 @@ jobs:
             mingw-w64-ucrt-x86_64-zstd
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - name: Build and test
-        run: cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
       - name: Package
         run: |
           VERSION="$(tr -d '[:space:]' < VERSION)"
