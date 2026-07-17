@@ -16,9 +16,9 @@ exercise the path successfully.
 | Null-model solver | Brent, IDUL, IDUL+, AIDUL | Stable | `--lmm-null-solver brent/idul/idul_plus/aidul` |
 | Multivariate fixed-null | Wald | Stable | `--mv-method wald` or `--scan-tier approx` |
 | Multivariate semi | EMMV/EMmvGWAS-style Wald | Stable | `--mv-method emmv` or `--scan-tier semi` |
-| Multivariate GEMMA-style | Refit covariance, Wald primary | Stable | `--mv-method gemma` |
-| Multivariate GEMMA full | Refit covariance, Wald/LRT/Score columns | Stable | `--mv-method gemma-full` |
-| Multivariate exact full | GEMMA-style exact full refit, no-LOCO | Stable | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
+| Multivariate GEMMA-style | Refit covariance, Wald primary; GEMMA equivalence validation pending | Experimental | `--mv-method gemma` |
+| Multivariate GEMMA full | Refit covariance, Wald/LRT/Score columns; GEMMA equivalence validation pending | Experimental | `--mv-method gemma-full` |
+| Multivariate exact full | GEMMA-style exact full refit, no-LOCO; GEMMA equivalence validation pending | Experimental | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
 | Multivariate EB | Random-SNP EB Wald path | Experimental | `--mv-method eb` |
 | EMmvGWAS compatibility | EMmvGWAS coding/no-LOCO compatibility | Experimental | `--emmvgwas` |
 | Repeatability exact mode | Record-level GLS with approx/semi/exact scan tiers | Stable | `--repeatability-mode exact --scan-tier approx/semi/exact` |

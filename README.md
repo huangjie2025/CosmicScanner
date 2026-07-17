@@ -31,7 +31,8 @@ build/cosmicscanner --bfile examples/test_data --pheno examples/test_data.pheno 
   --mpheno 1 --gwas --scan-tier exact --lmm-gemma-mode 4 --no-loco \
   --out results/single_exact
 
-# Multivariate GEMMA-style exact full Wald/LRT/Score, no-LOCO
+# Experimental multivariate GEMMA-style exact full Wald/LRT/Score, no-LOCO
+# GEMMA equivalence validation is pending.
 build/cosmicscanner --bfile examples/test_data --pheno examples/demo_multivariate.pheno \
   --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco \
   --out results/mv_gemma_exact_full

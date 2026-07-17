@@ -137,6 +137,7 @@ run_case "multivariate GEMMA Wald" \
   --out "${OUT_DIR}/multivariate_gemma"
 test -s "${OUT_DIR}/multivariate_gemma.assoc.mv.txt"
 assert_meta "${OUT_DIR}/multivariate_gemma.scan.meta.txt" "multivariate_method" "gemma"
+assert_meta "${OUT_DIR}/multivariate_gemma.scan.meta.txt" "release_status" "experimental"
 
 run_case "multivariate GEMMA full" \
   "${BIN}" \
@@ -151,6 +152,7 @@ assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_WALD"
 assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_LRT"
 assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_SCORE"
 assert_meta "${OUT_DIR}/multivariate_gemma_full.scan.meta.txt" "multivariate_method" "gemma-full"
+assert_meta "${OUT_DIR}/multivariate_gemma_full.scan.meta.txt" "release_status" "experimental"
 
 run_case "README multivariate GEMMA exact full" \
   "${BIN}" \
@@ -165,6 +167,7 @@ assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_WAL
 assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_LRT"
 assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_SCORE"
 assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "multivariate_method" "gemma-exact-full"
+assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "release_status" "experimental"
 assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "statistical_test" "wald,lrt,score"
 
 run_case "multivariate EB experimental" \

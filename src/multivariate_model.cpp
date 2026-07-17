@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <filesystem>
 #include <cctype>
+#include <numeric>
 #include <omp.h>
 #include "pheno_reader.h"
 #include "covar_reader.h"
@@ -225,6 +226,104 @@ static Eigen::MatrixXd mv_trait_derivative_matrix(int d, int idx) {
         }
     }
     return M;
+}
+
+struct MvRemlEval {
+    double loglik = std::numeric_limits<double>::quiet_NaN();
+    double logdet_h = std::numeric_limits<double>::quiet_NaN();
+    double logdet_xt_hinv_x = std::numeric_limits<double>::quiet_NaN();
+    double quad = std::numeric_limits<double>::quiet_NaN();
+    Eigen::VectorXd beta;
+};
+
+static MvRemlEval mv_eval_reml_direct(const Eigen::MatrixXd& UtY,
+                                      const Eigen::MatrixXd& UtX,
+                                      const Eigen::VectorXd& D,
+                                      const Eigen::MatrixXd& Vg,
+                                      const Eigen::MatrixXd& Ve) {
+    MvRemlEval out;
+    const int n = UtY.rows();
+    const int d = UtY.cols();
+    const int c = UtX.cols();
+    const int pd = c * d;
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(pd, pd);
+    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(pd);
+    double yhy = 0.0;
+    double logdet_h = 0.0;
+    for (int i = 0; i < n; ++i) {
+        Eigen::MatrixXd S = D(i) * Vg + Ve;
+        S.diagonal().array() += 1e-8;
+        Eigen::LDLT<Eigen::MatrixXd> ldlt(S);
+        if (ldlt.info() != Eigen::Success) return out;
+        Eigen::MatrixXd Sinv = ldlt.solve(Eigen::MatrixXd::Identity(d, d));
+        for (int k = 0; k < d; ++k) {
+            const double val = ldlt.vectorD()(k);
+            if (!(val > 0.0)) return out;
+            logdet_h += std::log(val);
+        }
+        Eigen::VectorXd yi = UtY.row(i).transpose();
+        yhy += (yi.transpose() * Sinv * yi)(0, 0);
+        for (int a = 0; a < c; ++a) {
+            rhs.segment(a * d, d) += UtX(i, a) * (Sinv * yi);
+            for (int b = 0; b < c; ++b) {
+                H.block(a * d, b * d, d, d) += UtX(i, a) * UtX(i, b) * Sinv;
+            }
+        }
+    }
+    Eigen::LDLT<Eigen::MatrixXd> hldlt(H);
+    if (hldlt.info() != Eigen::Success) return out;
+    Eigen::VectorXd beta = hldlt.solve(rhs);
+    Eigen::VectorXd hsolve = hldlt.solve(rhs);
+    double logdet_x = 0.0;
+    for (int k = 0; k < hldlt.vectorD().size(); ++k) {
+        const double val = hldlt.vectorD()(k);
+        if (!(val > 0.0)) return out;
+        logdet_x += std::log(val);
+    }
+    const double quad = yhy - rhs.dot(hsolve);
+    out.logdet_h = logdet_h;
+    out.logdet_xt_hinv_x = logdet_x;
+    out.quad = quad;
+    out.beta = beta;
+    out.loglik = -0.5 * ((n - c) * d * std::log(2.0 * M_PI) + logdet_h + logdet_x + quad);
+    return out;
+}
+
+static Eigen::MatrixXd mv_load_dense_matrix(const std::string& path, int n) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Cannot open matrix file: " + path);
+    Eigen::MatrixXd M(n, n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            if (!(in >> M(i, j))) throw std::runtime_error("Matrix file has fewer values than expected: " + path);
+        }
+    }
+    return M;
+}
+
+static Eigen::MatrixXd mv_parse_square_matrix_arg(const std::string& s, int d, const std::string& name) {
+    Eigen::MatrixXd M(d, d);
+    std::stringstream ss(s);
+    std::string item;
+    std::vector<double> vals;
+    while (std::getline(ss, item, ',')) {
+        if (!item.empty()) vals.push_back(std::stod(item));
+    }
+    if ((int)vals.size() != d * d) throw std::runtime_error(name + " expects d*d comma-separated values");
+    for (int i = 0, k = 0; i < d; ++i) {
+        for (int j = 0; j < d; ++j, ++k) M(i, j) = vals[k];
+    }
+    return M;
+}
+
+static void mv_write_matrix(std::ostream& os, const Eigen::MatrixXd& M) {
+    os << std::setprecision(12);
+    for (int i = 0; i < M.rows(); ++i) {
+        for (int j = 0; j < M.cols(); ++j) {
+            if (i || j) os << ',';
+            os << M(i, j);
+        }
+    }
 }
 
 static void mv_add_kron(Eigen::MatrixXd& out,
@@ -676,6 +775,10 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     opts.gemma_emp = cfg.multivariate_emp;
     opts.gemma_nrp = cfg.multivariate_nrp;
     opts.gemma_crt = cfg.multivariate_crt;
+    opts.null_only = cfg.multivariate_null_only;
+    opts.k_file = cfg.multivariate_k_file;
+    opts.compare_vg = cfg.multivariate_compare_vg;
+    opts.compare_ve = cfg.multivariate_compare_ve;
     opts.reml_maxit = std::max(cfg.reml_maxit, opts.use_gemma_exact ? cfg.multivariate_emi : ((opts.use_emmv || opts.use_gemma_refit) ? 1000 : 100));
     opts.reml_tol = (opts.use_emmv || opts.use_gemma_refit) ? std::min(cfg.reml_tol, 1e-8) : cfg.reml_tol;
     opts.refine_top = cfg.multivariate_refine_top;
@@ -801,6 +904,10 @@ void MultivariateModel::loadCovariates() {
 }
 
 void MultivariateModel::run() {
+    if (options_.null_only) {
+        runNullOnlyDiagnostic();
+        return;
+    }
     const std::string resolved_tier = options_.scan_tier.empty()
         ? (options_.use_hybrid ? "approx" : (options_.use_gemma_refit ? "exact" : (options_.use_emmv ? "semi" : "approx")))
         : options_.scan_tier;
@@ -813,7 +920,9 @@ void MultivariateModel::run() {
     const std::string null_solver = options_.use_gemma_refit
         ? (options_.use_gemma_exact ? "gemma_exact_em" : "gemma_em")
         : (options_.use_emmv ? (options_.use_emmvgwas_lambda ? "emmvgwas_em" : "em_mv") : "fixed_null");
-    const std::string release_status = (options_.use_eb || options_.use_emmvgwas_lambda) ? "experimental" : "stable";
+    const std::string release_status = (options_.use_eb || options_.use_emmvgwas_lambda || options_.use_gemma_refit)
+        ? "experimental"
+        : "stable";
     {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
@@ -1031,6 +1140,96 @@ void MultivariateModel::run() {
         std::cout << "Multivariate EB summary saved to " << eb_summary << std::endl;
     }
     std::cout << "Results saved to " << out_file << std::endl;
+}
+
+void MultivariateModel::runNullOnlyDiagnostic() {
+    if (options_.k_file.empty()) {
+        throw std::runtime_error("--mv-null-only requires --mv-k-file for same-K diagnostics");
+    }
+    Eigen::MatrixXd K_full = mv_load_dense_matrix(options_.k_file, n_samples_);
+    Eigen::MatrixXd K(n_keep_, n_keep_);
+    for (int i = 0; i < n_keep_; ++i) {
+        for (int j = 0; j < n_keep_; ++j) {
+            K(i, j) = K_full(keep_.keep_indices[i], keep_.keep_indices[j]);
+        }
+    }
+    K = 0.5 * (K + K.transpose());
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(K);
+    Eigen::VectorXd D = es.eigenvalues();
+    Eigen::MatrixXd U = es.eigenvectors();
+    Eigen::MatrixXd UtY = U.transpose() * Y_;
+    Eigen::MatrixXd UtX = U.transpose() * X_;
+
+    MvEigenVce::Options vce_opts;
+    vce_opts.use_projection = false;
+    vce_opts.max_iter = options_.reml_maxit;
+    vce_opts.tol = options_.reml_tol;
+    vce_opts.verbose = false;
+    MvEigenVce vce(vce_opts);
+    vce.prepare(Y_, X_, K);
+    bool converged = vce.runNullModel();
+    Eigen::MatrixXd Vg = vce.getVg();
+    Eigen::MatrixXd Ve = vce.getVe();
+
+    MvRemlEval cosmic_eval = mv_eval_reml_direct(UtY, UtX, D, Vg, Ve);
+
+    std::ofstream out(options_.out_prefix + ".mv.null.diag.txt");
+    out << "Item\tValue\n";
+    out << "n_samples\t" << n_keep_ << "\n";
+    out << "n_traits\t" << Y_.cols() << "\n";
+    out << "trait_order\t";
+    for (size_t i = 0; i < options_.mpheno_list.size(); ++i) {
+        if (i) out << ',';
+        out << options_.mpheno_list[i];
+    }
+    out << "\n";
+    out << "fixed_effect_rows\t" << X_.rows() << "\n";
+    out << "fixed_effect_cols\t" << X_.cols() << "\n";
+    out << "k_file\t" << options_.k_file << "\n";
+    out << "k_trace\t" << std::setprecision(12) << K.trace() << "\n";
+    out << "k_mean_diag\t" << K.diagonal().mean() << "\n";
+    out << "k_min_eigen\t" << D.minCoeff() << "\n";
+    out << "k_max_eigen\t" << D.maxCoeff() << "\n";
+    out << "phenotype_covariance\t";
+    Eigen::MatrixXd Yc = Y_.rowwise() - Y_.colwise().mean();
+    mv_write_matrix(out, (Yc.transpose() * Yc) / std::max(1, n_keep_ - 1));
+    out << "\n";
+    out << "cosmic_converged\t" << (converged ? "yes" : "no") << "\n";
+    out << "cosmic_Vg\t"; mv_write_matrix(out, Vg); out << "\n";
+    out << "cosmic_Ve\t"; mv_write_matrix(out, Ve); out << "\n";
+    out << "cosmic_reml_loglik\t" << cosmic_eval.loglik << "\n";
+    out << "cosmic_logdet_H\t" << cosmic_eval.logdet_h << "\n";
+    out << "cosmic_logdet_XtHinvX\t" << cosmic_eval.logdet_xt_hinv_x << "\n";
+    out << "cosmic_quad\t" << cosmic_eval.quad << "\n";
+    out << "cosmic_fixed_beta\t";
+    for (int i = 0; i < cosmic_eval.beta.size(); ++i) {
+        if (i) out << ',';
+        out << cosmic_eval.beta(i);
+    }
+    out << "\n";
+
+    if (!options_.compare_vg.empty() || !options_.compare_ve.empty()) {
+        if (options_.compare_vg.empty() || options_.compare_ve.empty()) {
+            throw std::runtime_error("--mv-compare-vg and --mv-compare-ve must be provided together");
+        }
+        Eigen::MatrixXd Vg_cmp = mv_parse_square_matrix_arg(options_.compare_vg, Y_.cols(), "--mv-compare-vg");
+        Eigen::MatrixXd Ve_cmp = mv_parse_square_matrix_arg(options_.compare_ve, Y_.cols(), "--mv-compare-ve");
+        MvRemlEval cmp = mv_eval_reml_direct(UtY, UtX, D, Vg_cmp, Ve_cmp);
+        out << "compare_Vg\t"; mv_write_matrix(out, Vg_cmp); out << "\n";
+        out << "compare_Ve\t"; mv_write_matrix(out, Ve_cmp); out << "\n";
+        out << "compare_reml_loglik\t" << cmp.loglik << "\n";
+        out << "compare_logdet_H\t" << cmp.logdet_h << "\n";
+        out << "compare_logdet_XtHinvX\t" << cmp.logdet_xt_hinv_x << "\n";
+        out << "compare_quad\t" << cmp.quad << "\n";
+        out << "compare_fixed_beta\t";
+        for (int i = 0; i < cmp.beta.size(); ++i) {
+            if (i) out << ',';
+            out << cmp.beta(i);
+        }
+        out << "\n";
+        out << "compare_minus_cosmic_loglik\t" << (cmp.loglik - cosmic_eval.loglik) << "\n";
+    }
 }
 
 

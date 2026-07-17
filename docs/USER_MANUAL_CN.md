@@ -52,7 +52,7 @@ PLINK 1 BED: `--bfile <前缀>`。PLINK 2 PGEN: `--pfile <前缀>`。BGEN: `--bg
 | --lmm-gemma-mode 1\|2\|3\|4 | LMM Wald/LRT/Score/all；4 输出 P_WALD/P_LRT/P_SCORE | 否 |
 | --lmm-null-solver brent\|idul\|idul_plus\|aidul | 仅影响 null-model solver；IDUL 系列失败可回退 Brent | brent |
 | --multivariate | 多性状 GWAS | 配合 --mpheno-list |
-| --mv-method wald\|emmv\|gemma\|gemma-full\|gemma-exact-full\|eb | 多性状方法；EB 为 experimental | emmv |
+| --mv-method wald\|emmv\|gemma\|gemma-full\|gemma-exact-full\|eb | 多性状方法；gemma 系列与 EB 为 experimental | emmv |
 | --repeatability-model | 重复力 GWAS | 配合 --tpheno |
 | --repeatability-mode auto\|exact\|fast\|stcg | 重复力模式 | auto |
 | --make-agh | A/G/H 构建 | 配合 --ped |
@@ -78,6 +78,7 @@ cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate -
 cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-full --no-loco --out mv.gemma
 cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco --out mv.exact
 ```
+`gemma`、`gemma-full` 和 `gemma-exact-full` 当前为 GEMMA-style experimental 模式，GEMMA 等价性验证尚未完成。
 
 ### 重复力
 ```bash

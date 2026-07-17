@@ -233,9 +233,9 @@ Repeatability exact requires PLINK input, no record weights.
 |---|---|---|
 | wald | Stable | Fixed-null multivariate Wald scan |
 | emmv | Stable | EMMV/EMmvGWAS-style semi scan, Wald output |
-| gemma | Stable | GEMMA-style covariance refit with Wald primary output |
-| gemma-full | Stable | GEMMA-style covariance refit with Wald/LRT/Score columns |
-| gemma-exact-full | Stable | Exact GEMMA-style full refit; requires --no-loco |
+| gemma | Experimental, GEMMA-style | Covariance refit with Wald primary output; GEMMA equivalence validation pending |
+| gemma-full | Experimental | GEMMA equivalence pending; emits Wald/LRT/Score columns |
+| gemma-exact-full | Experimental | Exact GEMMA-style full refit; requires --no-loco; GEMMA equivalence pending |
 | eb | Experimental | Random-SNP EB Wald path |
 
 Hybrid and GxE multivariate methods are unsupported in v1.1.3 and are rejected

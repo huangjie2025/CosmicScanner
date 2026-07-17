@@ -53,6 +53,10 @@ public:
         bool use_aireml = false;
         bool use_emmvgwas_lambda = false;
         bool output_vbeta = false;
+        bool null_only = false;
+        std::string k_file;
+        std::string compare_vg;
+        std::string compare_ve;
         bool output_emmvgwas = false;
         bool emmvgwas_vc_only = false;
         std::string emmvgwas_G_file;
@@ -120,6 +124,7 @@ private:
     void writeResults(const std::string& out_file, const std::vector<MvGwasResult>& results);
     void writeEmmvgwasOutputs(const MvEigenVce& vce, const std::vector<MvGwasResult>& results) const;
     void writeEbSummary(const std::string& out_file) const;
+    void runNullOnlyDiagnostic();
 };
 
 } // namespace cosmic
