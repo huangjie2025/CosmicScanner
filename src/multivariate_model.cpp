@@ -16,6 +16,7 @@
 #include <cctype>
 #include <numeric>
 #include <omp.h>
+#include <unsupported/Eigen/KroneckerProduct>
 #include "pheno_reader.h"
 #include "covar_reader.h"
 #include "data_filter.h"
@@ -178,6 +179,18 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
             Eigen::MatrixXd We = Ve * Pinv;
             Eigen::VectorXd ehat = We * resid;
             Se += ehat * ehat.transpose() + Ve - We * Ve;
+
+            if (UtX.cols() > 0) {
+                Eigen::VectorXd xi = UtX.row(i).transpose();
+                Eigen::MatrixXd Xi = Eigen::kroneckerProduct(
+                    xi.transpose(), Eigen::MatrixXd::Identity(d, d));
+                Eigen::MatrixXd beta_unc = Xi * beta_cov * Xi.transpose();
+                Eigen::MatrixXd Wg = Vg * D(i) * Pinv;
+                if (D(i) > 1e-12) {
+                    Sg += Wg * beta_unc * Wg.transpose() / D(i);
+                }
+                Se += We * beta_unc * We.transpose();
+            }
         }
 
         Eigen::MatrixXd Vg_new = 0.5 * (Sg / n + (Sg / n).transpose());
@@ -880,6 +893,8 @@ void MultivariateModel::run() {
              << "null_solver\t" << null_solver << "\n"
              << "objective_type\tREML\n"
              << "null_optimizer\t" << (options_.use_gemma_refit ? "em_reml_correction+dense_reml_refinement" : null_solver) << "\n"
+             << "grm_scaling\t" << (options_.k_file.empty() ? "default_vanraden_centered_sum_2pq" : "external_k_file_no_rescaling") << "\n"
+             << "external_k_file\t" << (options_.k_file.empty() ? "none" : options_.k_file) << "\n"
              << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
              << "fallback\tnone\n"
              << "multivariate_method\t" << options_.method_name << "\n"

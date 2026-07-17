@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <fstream>
 #include <limits>
 #include <vector>
 #include <omp.h>
@@ -11,6 +12,20 @@
 #include "mvlmm_engine.h"
 
 namespace cosmic {
+
+static Eigen::MatrixXd mv_refit_load_dense_matrix(const std::string& path, int n) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Cannot open matrix file: " + path);
+    Eigen::MatrixXd M(n, n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            if (!(in >> M(i, j))) {
+                throw std::runtime_error("Matrix file has fewer values than expected: " + path);
+            }
+        }
+    }
+    return M;
+}
 
 void MultivariateModel::runGemmaRefit() {
     mv_validate_output_parent(options_.out_prefix);
@@ -45,7 +60,16 @@ void MultivariateModel::runGemmaRefit() {
     #endif
 
     Eigen::MatrixXd G_sub(n_keep_, n_keep_);
-    if (refit_grm_override_) {
+    if (!options_.k_file.empty()) {
+        std::cout << "Using external K matrix for GEMMA-style refit: " << options_.k_file << "\n";
+        Eigen::MatrixXd K_full = mv_refit_load_dense_matrix(options_.k_file, n_samples_);
+        for (int i = 0; i < n_keep_; ++i) {
+            for (int j = 0; j < n_keep_; ++j) {
+                G_sub(i, j) = K_full(keep_.keep_indices[i], keep_.keep_indices[j]);
+            }
+        }
+        G_sub = 0.5 * (G_sub + G_sub.transpose());
+    } else if (refit_grm_override_) {
         std::cout << "Using LOCO GRM override for GEMMA-style refit"
                   << (refit_chrom_filter_.empty() ? "" : (" (chr " + refit_chrom_filter_ + ")"))
                   << "...\n";
