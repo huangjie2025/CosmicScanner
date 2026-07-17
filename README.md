@@ -20,6 +20,7 @@ matrix.
 ```bash
 bash scripts/build.sh
 bash scripts/validate_release.sh
+bash scripts/package_source.sh
 ```
 
 Core smoke-test examples:
