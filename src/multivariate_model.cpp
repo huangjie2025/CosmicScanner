@@ -637,22 +637,18 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
         opts.use_gemma_refit = true;
         opts.use_gemma_full = true;
         opts.use_gemma_exact = true;
-    } else if (method == "gemma-gxe" || method == "gxe") {
-        opts.use_emmv = false;
-        opts.use_gemma_gxe = true;
-    } else if (method == "gemma-gxe-full" || method == "gxe-full") {
-        opts.use_emmv = false;
-        opts.use_gemma_gxe = true;
-        opts.use_gemma_full = true;
-    } else if (method == "hybrid") {
-        opts.use_emmv = true;
-        opts.use_hybrid = true;
+    } else if (method == "gemma-gxe" || method == "gxe"
+               || method == "gemma-gxe-full" || method == "gxe-full"
+               || method == "hybrid") {
+        throw std::runtime_error("--mv-method " + method
+            + " is unavailable in this focused release. Supported values: wald, emmv, gemma, gemma-full, gemma-exact-full, eb");
     } else if (method == "eb" || method == "eb-lmm" || method == "lmm-eb") {
         opts.use_eb = true;
         opts.use_emmv = false;
     } else if (method != "emmv") {
-        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: emmv, wald, eb, gemma, gemma-full, gemma-exact, gemma-gxe, gemma-gxe-full, hybrid");
+        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: wald, emmv, gemma, gemma-full, gemma-exact-full, eb");
     }
+    opts.method_name = method;
     if (cfg.multivariate_eb || cfg.eb_lmm) { opts.use_eb = true; opts.use_emmv = false; }
     opts.test_wald = contains_mv_test(cfg.multivariate_tests, "wald");
     opts.test_lrt = contains_mv_test(cfg.multivariate_tests, "lrt");
@@ -803,20 +799,29 @@ void MultivariateModel::run() {
     const std::string vc_strategy = resolved_tier == "exact" ? "per_snp_full_covariance_refit"
                                   : resolved_tier == "semi" ? "fixed_covariance_ratio_profile_residual"
                                                              : "fixed_null_covariance";
+    const std::string test_label = options_.use_gemma_full || options_.use_gemma_exact
+        ? "wald,lrt,score"
+        : "wald";
+    const std::string null_solver = options_.use_gemma_refit
+        ? (options_.use_gemma_exact ? "gemma_exact_em" : "gemma_em")
+        : (options_.use_emmv ? (options_.use_emmvgwas_lambda ? "emmvgwas_em" : "em_mv") : "fixed_null");
     {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
              << "analysis_model\tmultivariate_lmm\n"
+             << "model\tmultivariate_lmm\n"
              << "requested_scan_tier\t" << (options_.scan_tier.empty() ? "legacy_method" : options_.scan_tier) << "\n"
              << "resolved_scan_tier\t" << resolved_tier << "\n"
+             << "scan_tier\t" << resolved_tier << "\n"
+             << "statistical_test\t" << test_label << "\n"
+             << "null_solver\t" << null_solver << "\n"
+             << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
+             << "fallback\tnone\n"
+             << "multivariate_method\t" << options_.method_name << "\n"
              << "snp_vc_strategy\t" << vc_strategy << "\n";
     }
     std::cout << "Multivariate scan tier: " << resolved_tier << " (" << vc_strategy << ")\n";
     mv_validate_output_parent(options_.out_prefix);
-
-    if (options_.use_gemma_gxe || options_.use_hybrid) {
-        throw std::runtime_error("Focused source build does not include multivariate GxE or hybrid routes.");
-    }
 
     if (options_.use_gemma_refit) {
         runGemmaRefit();

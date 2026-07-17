@@ -24,6 +24,29 @@ run_case() {
   echo "[validate] PASS  ${name}"
 }
 
+assert_header_has() {
+  local file="$1"
+  local col="$2"
+  awk -v c="${col}" 'NR == 1 { for (i = 1; i <= NF; ++i) if ($i == c) found = 1; exit found ? 0 : 1 }' "${file}"
+}
+
+assert_meta() {
+  local file="$1"
+  local key="$2"
+  local expected="$3"
+  test "$(awk -F '\t' -v k="${key}" '$1 == k { print $2 }' "${file}")" = "${expected}"
+}
+
+"${BIN}" --help | grep -q -- "--mv-method <method>"
+"${BIN}" --help | grep -q -- "Hybrid and GxE are unavailable"
+if "${BIN}" --bfile "${ROOT_DIR}/examples/test_data" --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method hybrid --out "${OUT_DIR}/bad_hybrid" \
+  >"${OUT_DIR}/bad_hybrid.log" 2>&1; then
+  echo "Unsupported --mv-method hybrid was not rejected" >&2
+  exit 1
+fi
+grep -q "unavailable in this focused release" "${OUT_DIR}/bad_hybrid.log"
+
 run_case "single-trait LMM" \
   "${BIN}" \
   --bfile "${ROOT_DIR}/examples/test_data" \
@@ -33,6 +56,45 @@ run_case "single-trait LMM" \
   --out "${OUT_DIR}/single_trait"
 test -s "${OUT_DIR}/single_trait.assoc.txt"
 test "$(wc -l < "${OUT_DIR}/single_trait.assoc.txt")" -eq 12
+assert_meta "${OUT_DIR}/single_trait.scan.meta.txt" "scan_tier" "semi"
+assert_meta "${OUT_DIR}/single_trait.scan.meta.txt" "statistical_test" "legacy_p"
+
+run_case "single-trait LMM approx" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --mpheno 1 --gwas --scan-tier approx --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/single_approx"
+test -s "${OUT_DIR}/single_approx.assoc.txt"
+assert_meta "${OUT_DIR}/single_approx.scan.meta.txt" "scan_tier" "approx"
+
+run_case "single-trait LM all tests" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --mpheno 1 --gwas --lm 4 \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/single_lm"
+test -s "${OUT_DIR}/single_lm.lm.assoc.txt"
+assert_header_has "${OUT_DIR}/single_lm.lm.assoc.txt" "P_WALD"
+assert_header_has "${OUT_DIR}/single_lm.lm.assoc.txt" "P_LRT"
+assert_header_has "${OUT_DIR}/single_lm.lm.assoc.txt" "P_SCORE"
+
+run_case "README single-trait exact Wald/LRT/Score" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --mpheno 1 --gwas --scan-tier exact --lmm-gemma-mode 4 --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/single_exact"
+test -s "${OUT_DIR}/single_exact.assoc.txt"
+assert_header_has "${OUT_DIR}/single_exact.assoc.txt" "P_WALD"
+assert_header_has "${OUT_DIR}/single_exact.assoc.txt" "P_LRT"
+assert_header_has "${OUT_DIR}/single_exact.assoc.txt" "P_SCORE"
+assert_meta "${OUT_DIR}/single_exact.scan.meta.txt" "scan_tier" "exact"
+assert_meta "${OUT_DIR}/single_exact.scan.meta.txt" "statistical_test" "wald,lrt,score"
+assert_meta "${OUT_DIR}/single_exact.scan.meta.txt" "loco" "disabled_no_loco"
 
 run_case "multivariate LMM" \
   "${BIN}" \
@@ -42,6 +104,59 @@ run_case "multivariate LMM" \
   --multivariate --gwas --scan-tier semi --no-loco \
   --out "${OUT_DIR}/multivariate"
 test -s "${OUT_DIR}/multivariate.assoc.mv.txt"
+assert_meta "${OUT_DIR}/multivariate.scan.meta.txt" "scan_tier" "semi"
+assert_meta "${OUT_DIR}/multivariate.scan.meta.txt" "multivariate_method" "emmv"
+
+run_case "multivariate fixed-null Wald" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --gwas --mv-method wald --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_wald"
+test -s "${OUT_DIR}/multivariate_wald.assoc.mv.txt"
+assert_meta "${OUT_DIR}/multivariate_wald.scan.meta.txt" "multivariate_method" "wald"
+
+run_case "multivariate GEMMA Wald" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --gwas --mv-method gemma --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_gemma"
+test -s "${OUT_DIR}/multivariate_gemma.assoc.mv.txt"
+assert_meta "${OUT_DIR}/multivariate_gemma.scan.meta.txt" "multivariate_method" "gemma"
+
+run_case "multivariate GEMMA full" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --gwas --mv-method gemma-full --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_gemma_full"
+test -s "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt"
+assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_WALD"
+assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_LRT"
+assert_header_has "${OUT_DIR}/multivariate_gemma_full.assoc.mv.txt" "P_SCORE"
+assert_meta "${OUT_DIR}/multivariate_gemma_full.scan.meta.txt" "multivariate_method" "gemma-full"
+
+run_case "README multivariate GEMMA exact full" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --gwas --mv-method gemma-exact-full --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_gemma_exact_full"
+test -s "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt"
+assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_WALD"
+assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_LRT"
+assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_SCORE"
+assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "multivariate_method" "gemma-exact-full"
+assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "statistical_test" "wald,lrt,score"
 
 run_case "repeatability semi" \
   "${BIN}" \

@@ -1,8 +1,8 @@
-# CosmicScanner v1.1.2 User Manual
+# CosmicScanner v1.1.3 User Manual
 
 ## Overview
 
-CosmicScanner v1.1.2 is a focused release supporting four core workflows
+CosmicScanner v1.1.3 is a focused release supporting four core workflows
 for the first manuscript:
 
 - **Single-trait GWAS**: Linear mixed model association analysis for a single
@@ -31,7 +31,7 @@ matching, covariate design, variant filtering, and GRM construction.
 ### Building from Source
 
 ```bash
-git clone --branch v1.1.2 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
+git clone --branch v1.1.3 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
 cd CosmicScanner
 
 # Default build (Eigen native solvers)
@@ -103,10 +103,11 @@ Missing values: NA or -9.
 | Parameter | Description | Default |
 |---|---|---|
 | --gwas | Enable GWAS scan | Required |
-| --scan-tier approx\|semi\|exact | Scan tier | Legacy default |
-| --no-loco | Disable LOCO | LOCO enabled |
-| --lm <1\|2\|3\|4> | Linear model mode | Off |
-| --lmm-gemma-mode <1\|2\|3\|4> | LMM Wald/LRT/Score | Wald |
+| --scan-tier approx\|semi\|exact | approx=fixed null; semi=fixed-ratio profile scale; exact=per-SNP VC refit | approx if omitted |
+| --no-loco | Use one global GRM | LOCO when multiple chromosomes exist |
+| --lm <1\|2\|3\|4> | Linear model 1=Wald, 2=LRT, 3=Score, 4=all | Off |
+| --lmm-gemma-mode <1\|2\|3\|4> | LMM 1=Wald, 2=LRT, 3=Score, 4=all columns | Legacy P if omitted |
+| --lmm-null-solver brent\|idul\|idul_plus\|aidul | Null-model solver only | brent |
 
 ### Multivariate GWAS
 
@@ -114,8 +115,8 @@ Missing values: NA or -9.
 |---|---|---|
 | --multivariate | Enable multivariate | Yes |
 | --mpheno-list c1,c2,... | Trait columns | Yes |
-| --scan-tier approx\|semi\|exact | Scan tier | Recommended |
-| --mv-method <method> | Method (emmv, etc.) | emmv |
+| --scan-tier approx\|semi\|exact | Shortcut: approx=wald, semi=emmv, exact=gemma-exact | emmv if omitted |
+| --mv-method wald\|emmv\|gemma\|gemma-full\|gemma-exact-full\|eb | Explicit method | emmv |
 | --mv-output-vbeta | Beta covariance | No |
 
 ### Repeatability GWAS
@@ -125,8 +126,8 @@ Missing values: NA or -9.
 | --repeatability-model | Enable model | Yes |
 | --tpheno <n> | Time column | Yes |
 | --mpheno <n> | Trait column | Yes |
-| --repeatability-mode auto\|exact\|fast | Mode | auto |
-| --scan-tier approx\|semi\|exact | Scan tier | Recommended |
+| --repeatability-mode auto\|exact\|fast\|stcg | Mode | auto |
+| --scan-tier approx\|semi\|exact | Only with repeatability-mode exact | approx if omitted |
 
 ### A/G/H Matrices
 
@@ -144,7 +145,7 @@ Missing values: NA or -9.
 
 ### Runtime
 
-`--threads <n>`, `--lmm-null-solver <solver>`, `--reml-maxit <n>`,
+`--threads <n>`, `--lmm-null-solver brent|idul|idul_plus|aidul`, `--reml-maxit <n>`,
 `--reml-tol <float>`, `--help`.
 
 ## Examples
@@ -159,6 +160,8 @@ cosmicscanner --bfile data --pheno trait.txt --mpheno 1 \
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier approx --out app
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi --out semi
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier exact --out exact
+cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier exact \
+  --lmm-gemma-mode 4 --lmm-null-solver brent --no-loco --out exact_wald_lrt_score
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi \
   --maf 0.01 --hwe 1e-6 --chr 1 --extract keep.txt --threads 8 --out filt
 ```
@@ -167,14 +170,20 @@ cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi \
 
 ```bash
 cosmicscanner --bfile data --pheno traits.txt \
-  --mpheno-list 1,2 --multivariate --gwas --scan-tier semi --no-loco \
-  --out results/mv
+  --mpheno-list 1,2 --multivariate --gwas --mv-method wald --no-loco \
+  --out results/mv_wald
 cosmicscanner --bfile data --pheno traits.txt \
-  --mpheno-list 1,2,3 --multivariate --gwas --scan-tier semi --no-loco \
-  --out results/mv3
+  --mpheno-list 1,2 --multivariate --gwas --mv-method emmv --no-loco \
+  --out results/mv_emmv
 cosmicscanner --bfile data --pheno traits.txt \
-  --mpheno-list 1,2 --multivariate --gwas --scan-tier exact --no-loco \
-  --out results/mv_exact
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-full --no-loco \
+  --out results/mv_gemma_full
+cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco \
+  --out results/mv_gemma_exact_full
+cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method eb --no-loco \
+  --out results/mv_eb
 ```
 
 ### Repeatability
@@ -188,6 +197,10 @@ cosmicscanner --bfile data --pheno repeated.txt \
   --tpheno 1 --mpheno 2 \
   --repeatability-model --repeatability-mode fast \
   --gwas --out results/rep_fast
+cosmicscanner --bfile data --pheno repeated.txt \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode stcg \
+  --gwas --out results/rep_stcg
 ```
 
 ### A/G/H
@@ -207,12 +220,26 @@ cosmicscanner --bfile data --make-agh \
 
 | Tier | Handling | Use case |
 |---|---|---|
-| approx | Fixed null parameters | High-throughput screening |
-| semi | Fixed ratios, profile scale | Recommended main scan |
-| exact | Per-SNP full refit | Small data / fine-mapping |
+| approx | Fixed null variance components | High-throughput screening |
+| semi | Fixed null ratio, profile SNP residual scale | Fast approximation to exact LMM |
+| exact | Per-SNP alternative variance-component refit | GEMMA-style validation and small data |
 
 Limitations: multivariate/repeatability exact require --no-loco.
 Repeatability exact requires PLINK input, no record weights.
+
+## Multivariate Methods
+
+| Method | Status | Meaning |
+|---|---|---|
+| wald | Stable | Fixed-null multivariate Wald scan |
+| emmv | Stable | EMMV/EMmvGWAS-style semi scan, Wald output |
+| gemma | Stable | GEMMA-style covariance refit with Wald primary output |
+| gemma-full | Stable | GEMMA-style covariance refit with Wald/LRT/Score columns |
+| gemma-exact-full | Stable | Exact GEMMA-style full refit; requires --no-loco |
+| eb | Experimental | Random-SNP EB Wald path |
+
+Hybrid and GxE multivariate methods are unsupported in v1.1.3 and are rejected
+during argument parsing.
 
 ## Output Formats
 
@@ -230,7 +257,9 @@ Key-value: n_records, n_subjects, Vg, Vpe, Ve, Vp, h2, r2, timing, scan mode.
 
 ### scan.meta.txt
 
-analysis_model, requested_scan_tier, resolved_scan_tier, snp_vc_strategy.
+analysis_model, model, requested_scan_tier, resolved_scan_tier, scan_tier,
+statistical_test, null_solver, loco, fallback, multivariate_method,
+snp_vc_strategy.
 
 ### Matrix .bin/.id
 
@@ -244,8 +273,12 @@ id_mapping_verified, hinv_symmetry_max_abs.
 ## GEMMA Compatibility
 
 --lm <1|2|3|4>, --lmm-gemma-mode <1|2|3|4>, --lmm-gemma-refit,
---lmm-null-solver brent (same as GEMMA default).
+--lmm-null-solver brent (same as GEMMA default). For Figure 2 validation, use
+single-trait `--scan-tier exact --lmm-gemma-mode 4 --no-loco` and multivariate
+`--mv-method gemma-exact-full --no-loco`, with harmonized samples, SNPs, GRM,
+covariates, and filters.
 
 ## Version
 
-v1.1.2. See CITATION.cff for citation metadata.
+v1.1.3. See CITATION.cff for citation metadata and `docs/SUPPORTED_MODES.md`
+for the frozen support matrix and release notes.

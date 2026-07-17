@@ -1,8 +1,8 @@
-# CosmicScanner v1.1.2 用户手册
+# CosmicScanner v1.1.3 用户手册
 
 ## 概述
 
-CosmicScanner v1.1.2 提供四项核心功能：
+CosmicScanner v1.1.3 提供四项核心功能：
 
 - **单性状 GWAS**：针对单个连续性状的线性混合模型关联分析
 - **多性状 GWAS**：多个相关连续性状的联合关联检验
@@ -17,7 +17,7 @@ C++17 编译器、Eigen3、OpenMP、zlib 和 zstd。
 
 ### 源码构建
 ```bash
-git clone --branch v1.1.2 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
+git clone --branch v1.1.3 --depth 1 https://github.com/huangjie2025/CosmicScanner.git
 cd CosmicScanner
 bash scripts/build.sh
 ```
@@ -46,10 +46,15 @@ PLINK 1 BED: `--bfile <前缀>`。PLINK 2 PGEN: `--pfile <前缀>`。BGEN: `--bg
 | --pheno <文件> | 表型文件 | 是 |
 | --out <前缀> | 输出前缀 | 是 |
 | --gwas | 启用 GWAS | 或 --make-agh |
-| --scan-tier approx\|semi\|exact | 扫描档位 | 推荐 |
-| --no-loco | 禁用 LOCO | LOCO 默认 |
+| --scan-tier approx\|semi\|exact | approx 固定 null；semi 固定比例/profile scale；exact 每 SNP 重估方差 | 省略时 approx/默认方法 |
+| --no-loco | 使用全局 GRM，不做 LOCO | 多染色体时默认 LOCO |
+| --lm 1\|2\|3\|4 | 线性模型 Wald/LRT/Score/all | 否 |
+| --lmm-gemma-mode 1\|2\|3\|4 | LMM Wald/LRT/Score/all；4 输出 P_WALD/P_LRT/P_SCORE | 否 |
+| --lmm-null-solver brent\|idul\|idul_plus\|aidul | 仅影响 null-model solver；IDUL 系列失败可回退 Brent | brent |
 | --multivariate | 多性状 GWAS | 配合 --mpheno-list |
+| --mv-method wald\|emmv\|gemma\|gemma-full\|gemma-exact-full\|eb | 多性状方法；EB 为 experimental | emmv |
 | --repeatability-model | 重复力 GWAS | 配合 --tpheno |
+| --repeatability-mode auto\|exact\|fast\|stcg | 重复力模式 | auto |
 | --make-agh | A/G/H 构建 | 配合 --ped |
 | --maf / --hwe | 频率/HWE 过滤 | 否 |
 | --extract / --exclude | SNP 选择 | 否 |
@@ -63,19 +68,22 @@ PLINK 1 BED: `--bfile <前缀>`。PLINK 2 PGEN: `--pfile <前缀>`。BGEN: `--bg
 cosmicscanner --bfile data --pheno trait.txt --mpheno 1 --gwas --scan-tier semi --out out
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier approx --out out.approx
 cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier semi --out out.semi
-cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier exact --out out.exact
+cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier exact --lmm-gemma-mode 4 --no-loco --out out.exact
 ```
 
 ### 多性状
 ```bash
-cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --scan-tier semi --no-loco --out mv
-cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --scan-tier exact --no-loco --out mv.exact
+cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method wald --no-loco --out mv.wald
+cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method emmv --no-loco --out mv.emmv
+cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-full --no-loco --out mv.gemma
+cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco --out mv.exact
 ```
 
 ### 重复力
 ```bash
 cosmicscanner --bfile data --pheno repeated.txt --tpheno 1 --mpheno 2 --repeatability-model --repeatability-mode exact --gwas --scan-tier semi --out rep
-cosmicscanner --bfile data --pheno repeated.txt --tpheno 1 --mpheno 2 --repeatability-model --repeatability-mode fast --gwas --scan-tier approx --out rep.fast
+cosmicscanner --bfile data --pheno repeated.txt --tpheno 1 --mpheno 2 --repeatability-model --repeatability-mode fast --gwas --out rep.fast
+cosmicscanner --bfile data --pheno repeated.txt --tpheno 1 --mpheno 2 --repeatability-model --repeatability-mode stcg --gwas --out rep.stcg
 ```
 
 ### A/G/H
@@ -90,7 +98,7 @@ cosmicscanner --bfile data --make-agh --ped ped.txt --genotyped-list geno.txt --
 | .assoc.txt | CHR, SNP, BP, A1, A2, FREQ, N, BETA, SE, P, LOG10P |
 | .assoc.mv.txt | 多性状: WALD_STAT, P, BETA_t, SE_t |
 | .repeatability.null.txt | Vg, Vpe, Ve, h2, r2, 时间统计 |
-| .scan.meta.txt | analysis_model, scan_tier, vc_strategy |
+| .scan.meta.txt | analysis_model, model, scan_tier, statistical_test, null_solver, loco, fallback, multivariate_method, vc_strategy |
 | .Ainv.bin/.id | A⁻¹ 矩阵下三角 + ID |
 | .G.bin/.id | G 矩阵下三角 + ID |
 | .Hinv.bin/.id | H⁻¹ 矩阵下三角 + ID |
@@ -105,7 +113,9 @@ cosmicscanner --bfile data --make-agh --ped ped.txt --genotyped-list geno.txt --
 | exact | 每 SNP 重估方差 | 小数据/候选位点 |
 
 多性状/重复力 exact 要求 --no-loco；重复力 exact 额外要求 PLINK 输入和无记录权重。
+Hybrid 和 GxE 多性状入口在 v1.1.3 focused release 中不支持，会在参数解析阶段报错。
+完整 Stable/Experimental/Internal/Unsupported 矩阵见 docs/SUPPORTED_MODES.md。
 
 ## 版本
 
-v1.1.2。引用信息见 CITATION.cff。
+v1.1.3。引用信息见 CITATION.cff。

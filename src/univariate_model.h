@@ -30,6 +30,7 @@ public:
         bool no_loco = false;
         int grm_alg = 1;
         EigenVce::NullSolver lmm_null_solver = EigenVce::NullSolver::Brent;
+        std::string lmm_null_solver_name = "brent";
         int reml_maxit = 100;
         double reml_tol = 1e-6;
         bool biobank_mode = false;

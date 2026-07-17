@@ -66,6 +66,18 @@ std::vector<std::string> sort_chrom_labels(const std::set<std::string>& chroms_s
     return chroms;
 }
 
+std::string lmm_stat_test_label(int mode) {
+    if (mode == 1) return "wald";
+    if (mode == 2) return "lrt";
+    if (mode == 3) return "score";
+    if (mode == 4) return "wald,lrt,score";
+    return "legacy_p";
+}
+
+std::string lmm_fallback_policy(const std::string& solver) {
+    return solver == "brent" ? "none" : "brent_if_idul_family_nonconvergent";
+}
+
 void GwasScanner::runLocoScan(
     const Eigen::VectorXd& y,
     const Eigen::MatrixXf& X,
@@ -84,8 +96,15 @@ void GwasScanner::runLocoScan(
         std::ofstream meta(options.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
              << "analysis_model\tunivariate_lmm\n"
+             << "model\tstandard_gaussian_lmm\n"
              << "requested_scan_tier\t" << (options.scan_tier.empty() ? "legacy_default" : options.scan_tier) << "\n"
              << "resolved_scan_tier\t" << resolved_tier << "\n"
+             << "scan_tier\t" << resolved_tier << "\n"
+             << "statistical_test\t" << lmm_stat_test_label(options.lmm_gemma_mode) << "\n"
+             << "null_solver\t" << options.lmm_null_solver_name << "\n"
+             << "loco\t" << (options.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
+             << "fallback\t" << lmm_fallback_policy(options.lmm_null_solver_name) << "\n"
+             << "multivariate_method\tNA\n"
              << "snp_vc_strategy\t" << vc_strategy << "\n";
     }
     std::cout << "Single-trait scan tier: " << resolved_tier << " (" << vc_strategy << ")\n";

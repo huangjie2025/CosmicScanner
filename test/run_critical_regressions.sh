@@ -32,11 +32,18 @@ assert_p_equivalent() {
        END { if (seen != 2) exit 1 }' "${expected}" "${actual}"
 }
 
-test "$("${BIN}" --version)" = "CosmicScanner 1.1.2"
+test "$("${BIN}" --version)" = "CosmicScanner 1.1.3"
+"${BIN}" --help | grep -q -- "--lmm-null-solver <solver>"
+"${BIN}" --help | grep -q -- "--mv-method <method>"
 if "${BIN}" --bfile x --pfile y --gwas >/dev/null 2>&1; then
   echo "Multiple genotype inputs were not rejected" >&2
   exit 1
 fi
+if "${BIN}" --bfile x --pheno y --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-gxe >/dev/null 2>"${OUT_DIR}/bad_gxe.err"; then
+  echo "Unsupported multivariate GxE was not rejected" >&2
+  exit 1
+fi
+grep -q "unavailable in this focused release" "${OUT_DIR}/bad_gxe.err"
 if "${BIN}" --bfile x --gwas --from-bp 2000 --to-bp 1000 >/dev/null 2>&1; then
   echo "Invalid base-pair range was not rejected" >&2
   exit 1

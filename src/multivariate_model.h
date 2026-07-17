@@ -22,6 +22,7 @@ public:
         int n_threads = 1;
         bool no_loco = false;
         std::string scan_tier;
+        std::string method_name = "emmv";
         bool use_covariate_projection = true;
         bool use_emmv = true;
         bool use_gemma_refit = false;

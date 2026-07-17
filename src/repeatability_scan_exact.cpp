@@ -313,8 +313,15 @@ void RepeatabilityModel::scanExact() {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
              << "analysis_model\trepeatability_lmm\n"
+             << "model\trecord_level_repeatability_lmm\n"
              << "requested_scan_tier\t" << (options_.scan_tier.empty() ? "legacy_default" : options_.scan_tier) << "\n"
              << "resolved_scan_tier\t" << resolved_tier << "\n"
+             << "scan_tier\t" << resolved_tier << "\n"
+             << "statistical_test\twald\n"
+             << "null_solver\tbrent\n"
+             << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
+             << "fallback\tnone\n"
+             << "multivariate_method\tNA\n"
              << "snp_vc_strategy\t"
              << (resolved_tier == "exact" ? "per_snp_full_vc_refit"
                  : resolved_tier == "semi" ? "fixed_ratio_profile_scale" : "fixed_null") << "\n";
