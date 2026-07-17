@@ -243,6 +243,7 @@ void MultivariateModel::runGemmaRefit() {
             double wald_update_norm = std::numeric_limits<double>::quiet_NaN();
             std::string wald_stop_reason = "not_run";
             double wald_stat = std::numeric_limits<double>::quiet_NaN();
+            double wald_loglik = std::numeric_limits<double>::quiet_NaN();
             double p_wald = std::numeric_limits<double>::quiet_NaN();
             double p_lrt = std::numeric_limits<double>::quiet_NaN();
             double p_score_val = std::numeric_limits<double>::quiet_NaN();
@@ -267,6 +268,8 @@ void MultivariateModel::runGemmaRefit() {
             beta = beta_score;
             Vbeta = Vbeta_score;
             wald_stat = score_stat;
+            Eigen::MatrixXd Vg_trace = Vg_null;
+            Eigen::MatrixXd Ve_trace = Ve_null;
 
             if (!options_.use_gemma_full) {
                 Eigen::MatrixXd Vg_wald, Ve_wald;
@@ -274,14 +277,21 @@ void MultivariateModel::runGemmaRefit() {
                                                                  : std::max(30, options_.reml_maxit / 20);
                 double snp_refit_tol = options_.use_gemma_compat ? options_.gemma_emp * 10.0
                                                                  : std::max(options_.reml_tol * 10.0, 1e-7);
+                if (options_.gemma_force_iterations >= 0) {
+                    snp_refit_maxit = options_.gemma_force_iterations;
+                    snp_refit_tol = -1.0;
+                }
                 wald_maxit_used = snp_refit_maxit;
                 wald_tol_used = snp_refit_tol;
                 if (!mv_em_refit_rotated(UtY, UtX_aug, D, snp_refit_maxit, snp_refit_tol,
                                          Vg_wald, Ve_wald, &Vg_null, &Ve_null,
-                                         &wald_iterations, &wald_update_norm, &wald_stop_reason)) continue;
+                                         &wald_iterations, &wald_update_norm, &wald_stop_reason,
+                                         options_.use_gemma_compat && options_.gemma_force_iterations < 0)) continue;
+                Vg_trace = Vg_wald;
+                Ve_trace = Ve_wald;
                 Eigen::VectorXd beta_all;
                 Eigen::MatrixXd Hinv;
-                if (!mv_fit_gls(UtY, UtX_aug, D, Vg_wald, Ve_wald, beta_all, Hinv, nullptr)) continue;
+                if (!mv_fit_gls(UtY, UtX_aug, D, Vg_wald, Ve_wald, beta_all, Hinv, &wald_loglik)) continue;
                 beta = beta_all.segment(offset, n_traits);
                 Vbeta = Hinv.block(offset, offset, n_traits, n_traits);
                 Eigen::MatrixXd Vbeta_inv = Vbeta.ldlt().solve(Eigen::MatrixXd::Identity(n_traits, n_traits));
@@ -346,14 +356,21 @@ void MultivariateModel::runGemmaRefit() {
                                                            : std::max(1, options_.reml_maxit / 10);
                     double em_tol = options_.use_gemma_exact ? options_.gemma_emp
                                                              : std::max(options_.reml_tol * 10.0, 1e-7);
+                    if (options_.gemma_force_iterations >= 0) {
+                        em_iter = options_.gemma_force_iterations;
+                        em_tol = -1.0;
+                    }
                     wald_maxit_used = em_iter;
                     wald_tol_used = em_tol;
                     if (!mv_em_refit_rotated(UtY, UtX_aug, D, em_iter, em_tol,
                                              Vg_wald, Ve_wald, &Vg_null, &Ve_null,
-                                             &wald_iterations, &wald_update_norm, &wald_stop_reason)) continue;
+                                             &wald_iterations, &wald_update_norm, &wald_stop_reason,
+                                             options_.use_gemma_compat && options_.gemma_force_iterations < 0)) continue;
+                    Vg_trace = Vg_wald;
+                    Ve_trace = Ve_wald;
                     Eigen::VectorXd beta_all;
                     Eigen::MatrixXd Hinv;
-                    if (!mv_fit_gls(UtY, UtX_aug, D, Vg_wald, Ve_wald, beta_all, Hinv, nullptr)) continue;
+                    if (!mv_fit_gls(UtY, UtX_aug, D, Vg_wald, Ve_wald, beta_all, Hinv, &wald_loglik)) continue;
                     beta = beta_all.segment(offset, n_traits);
                     Vbeta = Hinv.block(offset, offset, n_traits, n_traits);
                     Eigen::MatrixXd Vbeta_inv = Vbeta.ldlt().solve(Eigen::MatrixXd::Identity(n_traits, n_traits));
@@ -378,6 +395,8 @@ void MultivariateModel::runGemmaRefit() {
                             p_wald_crt = p_wald;
                             Vg_wald = Vg_wald2;
                             Ve_wald = Ve_wald2;
+                            Vg_trace = Vg_wald;
+                            Ve_trace = Ve_wald;
                         }
                     }
                     if (options_.gemma_crt && std::isfinite(p_wald) && p_wald < options_.pnr) {
@@ -414,7 +433,19 @@ void MultivariateModel::runGemmaRefit() {
                 ts << block_bim[kk].chrom << "\t" << block_bim[kk].id << "\t" << block_bim[kk].bp_pos
                    << "\t" << wald_maxit_used << "\t" << wald_tol_used
                    << "\t" << wald_iterations << "\t" << wald_update_norm
-                   << "\t" << wald_stop_reason;
+                   << "\t" << wald_stop_reason
+                   << "\t" << wald_loglik
+                   << "\t" << (std::isfinite(p_wald) ? p_wald : res.p_value)
+                   << "\t" << Vg_null(0,0) << "\t" << Vg_null(0,1) << "\t" << Vg_null(1,1)
+                   << "\t" << Ve_null(0,0) << "\t" << Ve_null(0,1) << "\t" << Ve_null(1,1)
+                   << "\t" << Vg_trace(0,0) << "\t" << Vg_trace(0,1) << "\t" << Vg_trace(1,1)
+                   << "\t" << Ve_trace(0,0) << "\t" << Ve_trace(0,1) << "\t" << Ve_trace(1,1)
+                   << "\t" << Vbeta(0,0) << "\t" << Vbeta(0,1) << "\t" << Vbeta(1,1);
+                if (n_traits == 2 && beta.size() >= 2) {
+                    ts << "\t" << beta(0) << "\t" << beta(1);
+                } else {
+                    ts << "\tNA\tNA";
+                }
                 trace_rows[snp_idx] = ts.str();
             }
         }
@@ -427,7 +458,10 @@ void MultivariateModel::runGemmaRefit() {
     std::cout << "\n";
     {
         std::ofstream tr(options_.out_prefix + ".mv.trace.tsv");
-        tr << "CHR\tSNP\tBP\twald_max_iter\twald_tolerance\twald_iterations\twald_update_norm\twald_stop_reason\n";
+        tr << "CHR\tSNP\tBP\twald_max_iter\twald_tolerance\twald_iterations\twald_update_norm\twald_stop_reason"
+           << "\twald_loglik\tP_WALD\tinit_Vg_11\tinit_Vg_12\tinit_Vg_22\tinit_Ve_11\tinit_Ve_12\tinit_Ve_22"
+           << "\tfinal_Vg_11\tfinal_Vg_12\tfinal_Vg_22\tfinal_Ve_11\tfinal_Ve_12\tfinal_Ve_22"
+           << "\tVbeta_11\tVbeta_12\tVbeta_22\tbeta_1\tbeta_2\n";
         for (const auto& row : trace_rows) {
             if (!row.empty()) tr << row << "\n";
         }

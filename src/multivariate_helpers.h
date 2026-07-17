@@ -39,7 +39,8 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
                          const Eigen::MatrixXd* init_ve = nullptr,
                          int* iterations_out = nullptr,
                          double* update_norm_out = nullptr,
-                         std::string* stop_reason_out = nullptr);
+                         std::string* stop_reason_out = nullptr,
+                         bool loglik_stop = false);
 double mv_chisq_stat_from_p(double p, int df);
 double mv_gc_correct_p(double p, double lambda, int df);
 MvCrtFactors mv_compute_crt_factors(const Eigen::MatrixXd& UtX,

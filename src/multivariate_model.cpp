@@ -141,7 +141,8 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
                                 const Eigen::MatrixXd* init_ve,
                                 int* iterations_out,
                                 double* update_norm_out,
-                                std::string* stop_reason_out) {
+                                std::string* stop_reason_out,
+                                bool loglik_stop) {
     int n = UtY.rows();
     int d = UtY.cols();
     if (init_vg && init_ve) {
@@ -162,10 +163,19 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
     if (update_norm_out) *update_norm_out = std::numeric_limits<double>::quiet_NaN();
     if (stop_reason_out) *stop_reason_out = "not_started";
 
+    double loglik_old = std::numeric_limits<double>::quiet_NaN();
     for (int iter = 0; iter < max_iter; ++iter) {
         Eigen::VectorXd beta;
         Eigen::MatrixXd beta_cov;
-        if (!mv_fit_gls(UtY, UtX, D, Vg, Ve, beta, beta_cov, nullptr)) return false;
+        double loglik_new = std::numeric_limits<double>::quiet_NaN();
+        if (!mv_fit_gls(UtY, UtX, D, Vg, Ve, beta, beta_cov,
+                        loglik_stop ? &loglik_new : nullptr)) return false;
+        if (loglik_stop && iter != 0 && std::isfinite(loglik_new) &&
+            std::isfinite(loglik_old) && std::abs(loglik_new - loglik_old) < tol) {
+            if (stop_reason_out) *stop_reason_out = "loglik_tolerance";
+            return true;
+        }
+        if (loglik_stop) loglik_old = loglik_new;
 
         Eigen::MatrixXd Sg = Eigen::MatrixXd::Zero(d, d);
         Eigen::MatrixXd Se = Eigen::MatrixXd::Zero(d, d);
@@ -211,7 +221,7 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
         if (!Vg.allFinite() || !Ve.allFinite()) return false;
         if (iterations_out) *iterations_out = iter + 1;
         if (update_norm_out) *update_norm_out = err;
-        if (err < tol) {
+        if (!loglik_stop && err < tol) {
             if (stop_reason_out) *stop_reason_out = "tolerance";
             return true;
         }
@@ -678,6 +688,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     opts.use_gemma_gxe = false;
     opts.use_hybrid = false;
     std::string method = cfg.multivariate_method;
+    opts.requested_method = method;
     if (!opts.scan_tier.empty() && cfg.multivariate_method_explicit) {
         const std::string expected = opts.scan_tier == "approx" ? "wald"
                                    : opts.scan_tier == "semi" ? "emmv" : "gemma-exact";
@@ -702,19 +713,29 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     } else if (method == "gemma") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method gemma is deprecated experimental GEMMA-style mode; use --mv-method gemma-compat for GEMMA default finite-EM compatibility.\n";
     } else if (method == "gemma-compat" || method == "gemma-default") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
         opts.use_gemma_compat = true;
+        if (method == "gemma-default") {
+            opts.deprecated_alias = true;
+            std::cerr << "Warning: --mv-method gemma-default is an alias; preferred spelling is --mv-method gemma-compat.\n";
+        }
     } else if (method == "gemma-full") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
         opts.use_gemma_full = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method gemma-full is deprecated experimental GEMMA-style mode; use --mv-method gemma-compat for GEMMA default finite-EM compatibility.\n";
     } else if (method == "gemma-exact" || method == "gemma-exact-full") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
         opts.use_gemma_full = true;
         opts.use_gemma_exact = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method " << method << " is deprecated experimental GEMMA-style mode and is not a validated fully converged exact REML mode.\n";
     } else if (method == "gemma-gxe" || method == "gxe"
                || method == "gemma-gxe-full" || method == "gxe-full"
                || method == "hybrid") {
@@ -749,6 +770,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     opts.gemma_nrp = cfg.multivariate_nrp;
     opts.gemma_crt = cfg.multivariate_crt;
     opts.null_only = cfg.multivariate_null_only;
+    opts.gemma_force_iterations = cfg.multivariate_gemma_force_iterations;
     opts.k_file = cfg.multivariate_k_file;
     opts.compare_vg = cfg.multivariate_compare_vg;
     opts.compare_ve = cfg.multivariate_compare_ve;
@@ -918,6 +940,10 @@ void MultivariateModel::run() {
              << "compatibility_target\t" << (options_.use_gemma_compat ? "gemma_default_finite_em" : "none") << "\n"
              << "per_snp_max_iterations\t" << (options_.use_gemma_compat ? gemma_default_alt_maxit : 0) << "\n"
              << "per_snp_convergence_tolerance\t" << (options_.use_gemma_compat ? gemma_default_alt_tol : 0.0) << "\n"
+             << "requested_method\t" << options_.requested_method << "\n"
+             << "resolved_method\t" << options_.method_name << "\n"
+             << "deprecated_alias\t" << (options_.deprecated_alias ? "true" : "false") << "\n"
+             << "forced_wald_iterations\t" << options_.gemma_force_iterations << "\n"
              << "grm_scaling\t" << (options_.k_file.empty() ? "default_vanraden_centered_sum_2pq" : "external_k_file_no_rescaling") << "\n"
              << "external_k_file\t" << (options_.k_file.empty() ? "none" : options_.k_file) << "\n"
              << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"

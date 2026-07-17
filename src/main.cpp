@@ -186,6 +186,7 @@ int main(int argc, char** argv) {
             }
             else if (a == "--mv-output-vbeta") cfg.multivariate_output_vbeta = true;
             else if (a == "--mv-null-only") { cfg.multivariate = true; cfg.multivariate_null_only = true; cfg.run_gwas = true; }
+            else if (a == "--mv-gemma-force-iterations") cfg.multivariate_gemma_force_iterations = std::stoi(need("--mv-gemma-force-iterations"));
             else if (a == "--mv-k-file") cfg.multivariate_k_file = need("--mv-k-file");
             else if (a == "--mv-compare-vg") cfg.multivariate_compare_vg = need("--mv-compare-vg");
             else if (a == "--mv-compare-ve") cfg.multivariate_compare_ve = need("--mv-compare-ve");

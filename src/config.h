@@ -62,6 +62,7 @@ struct GwasConfig {
     double multivariate_ai_tol = 1e-8;
     bool multivariate_output_vbeta = false;
     bool multivariate_null_only = false;
+    int multivariate_gemma_force_iterations = -1;
     std::string multivariate_k_file;
     std::string multivariate_compare_vg;
     std::string multivariate_compare_ve;

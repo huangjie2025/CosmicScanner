@@ -16,10 +16,8 @@ exercise the path successfully.
 | Null-model solver | Brent, IDUL, IDUL+, AIDUL | Stable | `--lmm-null-solver brent/idul/idul_plus/aidul` |
 | Multivariate fixed-null | Wald | Stable | `--mv-method wald` or `--scan-tier approx` |
 | Multivariate semi | EMMV/EMmvGWAS-style Wald | Stable | `--mv-method emmv` or `--scan-tier semi` |
-| Multivariate GEMMA-style | Refit covariance, Wald primary; GEMMA equivalence validation pending | Experimental | `--mv-method gemma` |
-| Multivariate GEMMA default compatibility | GEMMA default finite per-SNP REML EM schedule; equivalence validation pending | Experimental | `--mv-method gemma-compat` |
-| Multivariate GEMMA full | Refit covariance, Wald/LRT/Score columns; GEMMA equivalence validation pending | Experimental | `--mv-method gemma-full` |
-| Multivariate exact full | GEMMA-style full refit with longer controls; naming under review, not a fully validated exact REML optimum | Experimental | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
+| Multivariate GEMMA default compatibility | GEMMA default finite per-SNP REML EM Wald schedule; 82-SNP smoke validation passed, full-data validation pending | Experimental | `--mv-method gemma-compat` |
+| Multivariate GEMMA-style aliases | Deprecated aliases retained for one release; not recommended public entry points | Experimental | `--mv-method gemma/gemma-full/gemma-exact-full` |
 | Multivariate EB | Random-SNP EB Wald path | Experimental | `--mv-method eb` |
 | EMmvGWAS compatibility | EMmvGWAS coding/no-LOCO compatibility | Experimental | `--emmvgwas` |
 | Repeatability exact mode | Record-level GLS with approx/semi/exact scan tiers | Stable | `--repeatability-mode exact --scan-tier approx/semi/exact` |
@@ -49,6 +47,18 @@ exercise the path successfully.
   chromosomes are present. `--no-loco` uses one global GRM for all scanned SNPs.
 - Multivariate `--scan-tier approx/semi/exact` maps to `wald/emmv/gemma-exact`
   internally. For publication validation, use explicit `--mv-method` commands.
+
+Deprecated multivariate aliases retained for one release:
+
+| Requested method | Resolved method | Meaning |
+|---|---|---|
+| gemma | gemma | Legacy GEMMA-style Wald refit; deprecated experimental alias |
+| gemma-default | gemma-compat | Alias for GEMMA default finite-EM Wald compatibility |
+| gemma-full | gemma-full | Legacy Wald/LRT/Score refit output; deprecated experimental alias |
+| gemma-exact-full | gemma-exact-full | Legacy longer-control GEMMA-style path; not a validated fully converged exact REML mode |
+
+`reml-exact` is not exposed in this focused release. Fully converged per-SNP
+REML remains under independent reference validation.
 
 ## Release Notes v1.1.3
 

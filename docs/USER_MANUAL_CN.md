@@ -52,7 +52,7 @@ PLINK 1 BED: `--bfile <前缀>`。PLINK 2 PGEN: `--pfile <前缀>`。BGEN: `--bg
 | --lmm-gemma-mode 1\|2\|3\|4 | LMM Wald/LRT/Score/all；4 输出 P_WALD/P_LRT/P_SCORE | 否 |
 | --lmm-null-solver brent\|idul\|idul_plus\|aidul | 仅影响 null-model solver；IDUL 系列失败可回退 Brent | brent |
 | --multivariate | 多性状 GWAS | 配合 --mpheno-list |
-| --mv-method wald\|emmv\|gemma\|gemma-compat\|gemma-full\|gemma-exact-full\|eb | 多性状方法；gemma 系列与 EB 为 experimental | emmv |
+| --mv-method wald\|emmv\|gemma-compat\|eb | 推荐的多性状方法；gemma-compat 与 EB 为 experimental | emmv |
 | --repeatability-model | 重复力 GWAS | 配合 --tpheno |
 | --repeatability-mode auto\|exact\|fast\|stcg | 重复力模式 | auto |
 | --make-agh | A/G/H 构建 | 配合 --ped |
@@ -76,10 +76,8 @@ cosmicscanner --bfile data --pheno trait.txt --gwas --scan-tier exact --lmm-gemm
 cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method wald --no-loco --out mv.wald
 cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method emmv --no-loco --out mv.emmv
 cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-compat --no-loco --out mv.gemma_compat
-cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-full --no-loco --out mv.gemma
-cosmicscanner --bfile data --pheno traits.txt --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco --out mv.exact
 ```
-`gemma-compat` 目标是复现 GEMMA 默认有限 per-SNP REML EM schedule；`gemma`、`gemma-full` 和 `gemma-exact-full` 当前仍为 experimental，`gemma-exact-full` 名称仍在审查中，不应理解为 fully converged exact REML optimum。
+`gemma-compat` 目标是复现 GEMMA 默认有限 per-SNP REML EM Wald schedule；`gemma`、`gemma-default`、`gemma-full` 和 `gemma-exact-full` 仅作为 deprecated experimental aliases 保留一个版本。metadata 会记录 `requested_method`、`resolved_method` 和 `deprecated_alias`。`gemma-exact-full` 不应理解为 fully converged exact REML optimum；`reml-exact` 尚未公开。
 
 ### 重复力
 ```bash
