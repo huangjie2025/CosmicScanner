@@ -1,5 +1,6 @@
 #include "multivariate_model.h"
 #include "multivariate_helpers.h"
+#include "mv_em_update.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -170,9 +171,7 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
             if (ldlt.info() != Eigen::Success) return false;
             Eigen::MatrixXd Pinv = ldlt.solve(Eigen::MatrixXd::Identity(d, d));
 
-            Eigen::MatrixXd Wg = Vg * D(i) * Pinv;
-            Eigen::VectorXd uhat = Wg * resid;
-            Sg += uhat * uhat.transpose() + Vg * D(i) - Wg * Vg * D(i);
+            Sg += mv_em_genetic_contribution(D(i), Vg, Pinv, resid);
 
             Eigen::MatrixXd We = Ve * Pinv;
             Eigen::VectorXd ehat = We * resid;

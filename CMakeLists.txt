@@ -105,6 +105,11 @@ install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/cosmicscanner/docs)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(test_mv_em_update ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mv_em_update.cpp)
+  target_include_directories(test_mv_em_update PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(test_mv_em_update PRIVATE Eigen3::Eigen)
+  add_test(NAME mv_em_update_scaling COMMAND test_mv_em_update)
+
   find_program(BASH_EXECUTABLE NAMES bash)
   if(BASH_EXECUTABLE)
     add_test(
