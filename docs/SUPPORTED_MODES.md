@@ -17,8 +17,9 @@ exercise the path successfully.
 | Multivariate fixed-null | Wald | Stable | `--mv-method wald` or `--scan-tier approx` |
 | Multivariate semi | EMMV/EMmvGWAS-style Wald | Stable | `--mv-method emmv` or `--scan-tier semi` |
 | Multivariate GEMMA-style | Refit covariance, Wald primary; GEMMA equivalence validation pending | Experimental | `--mv-method gemma` |
+| Multivariate GEMMA default compatibility | GEMMA default finite per-SNP REML EM schedule; equivalence validation pending | Experimental | `--mv-method gemma-compat` |
 | Multivariate GEMMA full | Refit covariance, Wald/LRT/Score columns; GEMMA equivalence validation pending | Experimental | `--mv-method gemma-full` |
-| Multivariate exact full | GEMMA-style exact full refit, no-LOCO; GEMMA equivalence validation pending | Experimental | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
+| Multivariate exact full | GEMMA-style full refit with longer controls; naming under review, not a fully validated exact REML optimum | Experimental | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
 | Multivariate EB | Random-SNP EB Wald path | Experimental | `--mv-method eb` |
 | EMmvGWAS compatibility | EMmvGWAS coding/no-LOCO compatibility | Experimental | `--emmvgwas` |
 | Repeatability exact mode | Record-level GLS with approx/semi/exact scan tiers | Stable | `--repeatability-mode exact --scan-tier approx/semi/exact` |

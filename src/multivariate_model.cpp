@@ -138,7 +138,10 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
                                 Eigen::MatrixXd& Vg,
                                 Eigen::MatrixXd& Ve,
                                 const Eigen::MatrixXd* init_vg,
-                                const Eigen::MatrixXd* init_ve) {
+                                const Eigen::MatrixXd* init_ve,
+                                int* iterations_out,
+                                double* update_norm_out,
+                                std::string* stop_reason_out) {
     int n = UtY.rows();
     int d = UtY.cols();
     if (init_vg && init_ve) {
@@ -154,6 +157,10 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
     Ve = 0.5 * (Ve + Ve.transpose());
     Vg.diagonal().array() += 1e-8;
     Ve.diagonal().array() += 1e-8;
+
+    if (iterations_out) *iterations_out = 0;
+    if (update_norm_out) *update_norm_out = std::numeric_limits<double>::quiet_NaN();
+    if (stop_reason_out) *stop_reason_out = "not_started";
 
     for (int iter = 0; iter < max_iter; ++iter) {
         Eigen::VectorXd beta;
@@ -202,8 +209,15 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
         Vg = Vg_new;
         Ve = Ve_new;
         if (!Vg.allFinite() || !Ve.allFinite()) return false;
-        if (err < tol) return true;
+        if (iterations_out) *iterations_out = iter + 1;
+        if (update_norm_out) *update_norm_out = err;
+        if (err < tol) {
+            if (stop_reason_out) *stop_reason_out = "tolerance";
+            return true;
+        }
     }
+    if (iterations_out) *iterations_out = max_iter;
+    if (stop_reason_out) *stop_reason_out = "max_iterations";
     return true;
 }
 
@@ -658,6 +672,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     if (!opts.use_emmvgwas_lambda) opts.use_covariate_projection = cfg.use_covariate_projection;
     opts.use_emmv = true;
     opts.use_gemma_refit = false;
+    opts.use_gemma_compat = false;
     opts.use_gemma_full = false;
     opts.use_gemma_exact = false;
     opts.use_gemma_gxe = false;
@@ -687,6 +702,10 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     } else if (method == "gemma") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
+    } else if (method == "gemma-compat" || method == "gemma-default") {
+        opts.use_emmv = false;
+        opts.use_gemma_refit = true;
+        opts.use_gemma_compat = true;
     } else if (method == "gemma-full") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
@@ -700,14 +719,15 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
                || method == "gemma-gxe-full" || method == "gxe-full"
                || method == "hybrid") {
         throw std::runtime_error("--mv-method " + method
-            + " is unavailable in this focused release. Supported values: wald, emmv, gemma, gemma-full, gemma-exact-full, eb");
+            + " is unavailable in this focused release. Supported values: wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb");
     } else if (method == "eb" || method == "eb-lmm" || method == "lmm-eb") {
         opts.use_eb = true;
         opts.use_emmv = false;
     } else if (method != "emmv") {
-        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: wald, emmv, gemma, gemma-full, gemma-exact-full, eb");
+        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb");
     }
     opts.method_name = method;
+    if (opts.use_gemma_compat) opts.method_name = "gemma-compat";
     if (opts.use_emmvgwas_lambda) opts.method_name = "emmv";
     if (cfg.multivariate_eb || cfg.eb_lmm) { opts.use_eb = true; opts.use_emmv = false; }
     opts.test_wald = contains_mv_test(cfg.multivariate_tests, "wald");
@@ -875,6 +895,8 @@ void MultivariateModel::run() {
     const std::string null_solver = options_.use_gemma_refit
         ? (options_.use_gemma_exact ? "gemma_exact_em" : "gemma_em")
         : (options_.use_emmv ? (options_.use_emmvgwas_lambda ? "emmvgwas_em" : "em_mv") : "fixed_null");
+    const int gemma_default_alt_maxit = std::max(1, options_.gemma_emi / 10);
+    const double gemma_default_alt_tol = options_.gemma_emp * 10.0;
     const std::string release_status = (options_.use_eb || options_.use_emmvgwas_lambda || options_.use_gemma_refit)
         ? "experimental"
         : "stable";
@@ -893,6 +915,9 @@ void MultivariateModel::run() {
              << "null_solver\t" << null_solver << "\n"
              << "objective_type\tREML\n"
              << "null_optimizer\t" << (options_.use_gemma_refit ? "em_reml_correction+dense_reml_refinement" : null_solver) << "\n"
+             << "compatibility_target\t" << (options_.use_gemma_compat ? "gemma_default_finite_em" : "none") << "\n"
+             << "per_snp_max_iterations\t" << (options_.use_gemma_compat ? gemma_default_alt_maxit : 0) << "\n"
+             << "per_snp_convergence_tolerance\t" << (options_.use_gemma_compat ? gemma_default_alt_tol : 0.0) << "\n"
              << "grm_scaling\t" << (options_.k_file.empty() ? "default_vanraden_centered_sum_2pq" : "external_k_file_no_rescaling") << "\n"
              << "external_k_file\t" << (options_.k_file.empty() ? "none" : options_.k_file) << "\n"
              << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"

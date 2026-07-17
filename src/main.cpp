@@ -28,7 +28,7 @@ namespace {
 const char* kScanTierValues = "approx, semi, exact";
 const char* kLmmGemmaModeValues = "1=Wald, 2=LRT, 3=Score, 4=all";
 const char* kNullSolverValues = "brent, idul, idul_plus (or idul+), aidul";
-const char* kMvMethodValues = "wald, emmv, gemma, gemma-full, gemma-exact-full, eb";
+const char* kMvMethodValues = "wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb";
 const char* kRepeatabilityModeValues = "auto, exact, fast, stcg";
 
 bool is_int_mode(int mode) {
@@ -37,6 +37,7 @@ bool is_int_mode(int mode) {
 
 bool is_supported_mv_method(const std::string& method) {
     return method == "wald" || method == "emmv" || method == "gemma"
+        || method == "gemma-compat" || method == "gemma-default"
         || method == "gemma-full" || method == "gemma-exact"
         || method == "gemma-exact-full" || method == "eb"
         || method == "eb-lmm" || method == "lmm-eb";

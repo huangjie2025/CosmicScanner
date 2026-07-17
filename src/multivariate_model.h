@@ -27,6 +27,7 @@ public:
         bool use_covariate_projection = true;
         bool use_emmv = true;
         bool use_gemma_refit = false;
+        bool use_gemma_compat = false;
         bool use_gemma_full = false;
         bool use_gemma_exact = false;
         bool use_gemma_gxe = false;

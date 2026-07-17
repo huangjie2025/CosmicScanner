@@ -35,6 +35,7 @@ assert_p_equivalent() {
 test "$("${BIN}" --version)" = "CosmicScanner 1.1.3"
 "${BIN}" --help | grep -q -- "--lmm-null-solver <solver>"
 "${BIN}" --help | grep -q -- "--mv-method <method>"
+"${BIN}" --help | grep -q -- "gemma-compat"
 if "${BIN}" --bfile x --pfile y --gwas >/dev/null 2>&1; then
   echo "Multiple genotype inputs were not rejected" >&2
   exit 1
@@ -65,6 +66,17 @@ if grep -q 'Computed stats for 240 SNPs' "${OUT_DIR}/repeatability_stcg.log"; th
   exit 1
 fi
 grep -q 'R3 scan with filtered-GRM VCE fallback' "${OUT_DIR}/repeatability_stcg.log"
+
+"${BIN}" --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-compat \
+  --chr 1 --from-bp 1000 --to-bp 3000 --threads 2 --no-loco \
+  --out "${OUT_DIR}/mv_gemma_compat" >"${OUT_DIR}/mv_gemma_compat.log" 2>&1
+test -s "${OUT_DIR}/mv_gemma_compat.assoc.mv.txt"
+test -s "${OUT_DIR}/mv_gemma_compat.mv.trace.tsv"
+grep -q $'compatibility_target\tgemma_default_finite_em' "${OUT_DIR}/mv_gemma_compat.scan.meta.txt"
+grep -q $'per_snp_max_iterations\t1000' "${OUT_DIR}/mv_gemma_compat.scan.meta.txt"
+grep -q $'per_snp_convergence_tolerance\t0.001' "${OUT_DIR}/mv_gemma_compat.scan.meta.txt"
 
 for format in pgen bgen; do
   if [[ "${format}" == "pgen" ]]; then

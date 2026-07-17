@@ -31,11 +31,11 @@ build/cosmicscanner --bfile examples/test_data --pheno examples/test_data.pheno 
   --mpheno 1 --gwas --scan-tier exact --lmm-gemma-mode 4 --no-loco \
   --out results/single_exact
 
-# Experimental multivariate GEMMA-style exact full Wald/LRT/Score, no-LOCO
-# GEMMA equivalence validation is pending.
+# Experimental multivariate GEMMA default compatibility path, no-LOCO
+# Targets GEMMA's finite per-SNP REML EM schedule; validation is pending.
 build/cosmicscanner --bfile examples/test_data --pheno examples/demo_multivariate.pheno \
-  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco \
-  --out results/mv_gemma_exact_full
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-compat --no-loco \
+  --out results/mv_gemma_compat
 
 # Repeatability record-level semi scan
 build/cosmicscanner --bfile examples/test_data --pheno examples/demo_repeatability.pheno \

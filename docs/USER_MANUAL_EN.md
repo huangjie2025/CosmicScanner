@@ -116,7 +116,7 @@ Missing values: NA or -9.
 | --multivariate | Enable multivariate | Yes |
 | --mpheno-list c1,c2,... | Trait columns | Yes |
 | --scan-tier approx\|semi\|exact | Shortcut: approx=wald, semi=emmv, exact=gemma-exact | emmv if omitted |
-| --mv-method wald\|emmv\|gemma\|gemma-full\|gemma-exact-full\|eb | Explicit method | emmv |
+| --mv-method wald\|emmv\|gemma\|gemma-compat\|gemma-full\|gemma-exact-full\|eb | Explicit method | emmv |
 | --mv-output-vbeta | Beta covariance | No |
 
 ### Repeatability GWAS
@@ -179,6 +179,9 @@ cosmicscanner --bfile data --pheno traits.txt \
   --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-full --no-loco \
   --out results/mv_gemma_full
 cosmicscanner --bfile data --pheno traits.txt \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-compat --no-loco \
+  --out results/mv_gemma_compat
+cosmicscanner --bfile data --pheno traits.txt \
   --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-exact-full --no-loco \
   --out results/mv_gemma_exact_full
 cosmicscanner --bfile data --pheno traits.txt \
@@ -234,8 +237,9 @@ Repeatability exact requires PLINK input, no record weights.
 | wald | Stable | Fixed-null multivariate Wald scan |
 | emmv | Stable | EMMV/EMmvGWAS-style semi scan, Wald output |
 | gemma | Experimental, GEMMA-style | Covariance refit with Wald primary output; GEMMA equivalence validation pending |
+| gemma-compat | Experimental | Targets GEMMA default finite per-SNP REML EM schedule; equivalence validation pending |
 | gemma-full | Experimental | GEMMA equivalence pending; emits Wald/LRT/Score columns |
-| gemma-exact-full | Experimental | Exact GEMMA-style full refit; requires --no-loco; GEMMA equivalence pending |
+| gemma-exact-full | Experimental | Longer-control GEMMA-style full refit; naming under review and not a fully validated exact REML optimum |
 | eb | Experimental | Random-SNP EB Wald path |
 
 Hybrid and GxE multivariate methods are unsupported in v1.1.3 and are rejected
