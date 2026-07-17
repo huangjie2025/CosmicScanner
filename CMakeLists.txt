@@ -110,6 +110,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_mv_em_update PRIVATE Eigen3::Eigen)
   add_test(NAME mv_em_update_scaling COMMAND test_mv_em_update)
 
+  add_executable(test_mv_reml_dense ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mv_reml_dense.cpp)
+  target_include_directories(test_mv_reml_dense PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(test_mv_reml_dense PRIVATE Eigen3::Eigen)
+  add_test(NAME mv_reml_objective_dense COMMAND test_mv_reml_dense objective)
+  add_test(NAME mv_reml_gradient_finite_difference COMMAND test_mv_reml_dense gradient)
+  add_test(NAME mv_reml_update_monotonicity COMMAND test_mv_reml_dense monotonicity)
+
   find_program(BASH_EXECUTABLE NAMES bash)
   if(BASH_EXECUTABLE)
     add_test(

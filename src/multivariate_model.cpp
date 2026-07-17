@@ -1,6 +1,7 @@
 #include "multivariate_model.h"
 #include "multivariate_helpers.h"
 #include "mv_em_update.h"
+#include "mv_reml_dense.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -226,67 +227,6 @@ static Eigen::MatrixXd mv_trait_derivative_matrix(int d, int idx) {
         }
     }
     return M;
-}
-
-struct MvRemlEval {
-    double loglik = std::numeric_limits<double>::quiet_NaN();
-    double logdet_h = std::numeric_limits<double>::quiet_NaN();
-    double logdet_xt_hinv_x = std::numeric_limits<double>::quiet_NaN();
-    double quad = std::numeric_limits<double>::quiet_NaN();
-    Eigen::VectorXd beta;
-};
-
-static MvRemlEval mv_eval_reml_direct(const Eigen::MatrixXd& UtY,
-                                      const Eigen::MatrixXd& UtX,
-                                      const Eigen::VectorXd& D,
-                                      const Eigen::MatrixXd& Vg,
-                                      const Eigen::MatrixXd& Ve) {
-    MvRemlEval out;
-    const int n = UtY.rows();
-    const int d = UtY.cols();
-    const int c = UtX.cols();
-    const int pd = c * d;
-    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(pd, pd);
-    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(pd);
-    double yhy = 0.0;
-    double logdet_h = 0.0;
-    for (int i = 0; i < n; ++i) {
-        Eigen::MatrixXd S = D(i) * Vg + Ve;
-        S.diagonal().array() += 1e-8;
-        Eigen::LDLT<Eigen::MatrixXd> ldlt(S);
-        if (ldlt.info() != Eigen::Success) return out;
-        Eigen::MatrixXd Sinv = ldlt.solve(Eigen::MatrixXd::Identity(d, d));
-        for (int k = 0; k < d; ++k) {
-            const double val = ldlt.vectorD()(k);
-            if (!(val > 0.0)) return out;
-            logdet_h += std::log(val);
-        }
-        Eigen::VectorXd yi = UtY.row(i).transpose();
-        yhy += (yi.transpose() * Sinv * yi)(0, 0);
-        for (int a = 0; a < c; ++a) {
-            rhs.segment(a * d, d) += UtX(i, a) * (Sinv * yi);
-            for (int b = 0; b < c; ++b) {
-                H.block(a * d, b * d, d, d) += UtX(i, a) * UtX(i, b) * Sinv;
-            }
-        }
-    }
-    Eigen::LDLT<Eigen::MatrixXd> hldlt(H);
-    if (hldlt.info() != Eigen::Success) return out;
-    Eigen::VectorXd beta = hldlt.solve(rhs);
-    Eigen::VectorXd hsolve = hldlt.solve(rhs);
-    double logdet_x = 0.0;
-    for (int k = 0; k < hldlt.vectorD().size(); ++k) {
-        const double val = hldlt.vectorD()(k);
-        if (!(val > 0.0)) return out;
-        logdet_x += std::log(val);
-    }
-    const double quad = yhy - rhs.dot(hsolve);
-    out.logdet_h = logdet_h;
-    out.logdet_xt_hinv_x = logdet_x;
-    out.quad = quad;
-    out.beta = beta;
-    out.loglik = -0.5 * ((n - c) * d * std::log(2.0 * M_PI) + logdet_h + logdet_x + quad);
-    return out;
 }
 
 static Eigen::MatrixXd mv_load_dense_matrix(const std::string& path, int n) {
@@ -1172,7 +1112,7 @@ void MultivariateModel::runNullOnlyDiagnostic() {
     Eigen::MatrixXd Vg = vce.getVg();
     Eigen::MatrixXd Ve = vce.getVe();
 
-    MvRemlEval cosmic_eval = mv_eval_reml_direct(UtY, UtX, D, Vg, Ve);
+    MvRemlEval cosmic_eval = mv_eval_reml_dense(UtY, UtX, D, Vg, Ve);
 
     std::ofstream out(options_.out_prefix + ".mv.null.diag.txt");
     out << "Item\tValue\n";
@@ -1215,7 +1155,7 @@ void MultivariateModel::runNullOnlyDiagnostic() {
         }
         Eigen::MatrixXd Vg_cmp = mv_parse_square_matrix_arg(options_.compare_vg, Y_.cols(), "--mv-compare-vg");
         Eigen::MatrixXd Ve_cmp = mv_parse_square_matrix_arg(options_.compare_ve, Y_.cols(), "--mv-compare-ve");
-        MvRemlEval cmp = mv_eval_reml_direct(UtY, UtX, D, Vg_cmp, Ve_cmp);
+        MvRemlEval cmp = mv_eval_reml_dense(UtY, UtX, D, Vg_cmp, Ve_cmp);
         out << "compare_Vg\t"; mv_write_matrix(out, Vg_cmp); out << "\n";
         out << "compare_Ve\t"; mv_write_matrix(out, Ve_cmp); out << "\n";
         out << "compare_reml_loglik\t" << cmp.loglik << "\n";
