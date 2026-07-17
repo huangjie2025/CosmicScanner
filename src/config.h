@@ -65,6 +65,8 @@ struct GwasConfig {
     std::string multivariate_k_file;
     std::string multivariate_compare_vg;
     std::string multivariate_compare_ve;
+    std::string multivariate_init_vg;
+    std::string multivariate_init_ve;
     bool multivariate_emmvgwas_output = false;
     bool multivariate_emmvgwas_vc_only = false;
     std::string multivariate_emmvgwas_G_file;

@@ -57,6 +57,8 @@ public:
         std::string k_file;
         std::string compare_vg;
         std::string compare_ve;
+        std::string init_vg;
+        std::string init_ve;
         bool output_emmvgwas = false;
         bool emmvgwas_vc_only = false;
         std::string emmvgwas_G_file;

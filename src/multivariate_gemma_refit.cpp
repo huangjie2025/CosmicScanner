@@ -77,6 +77,8 @@ void MultivariateModel::runGemmaRefit() {
     null_vce_opts.max_iter = options_.reml_maxit;
     null_vce_opts.tol = options_.reml_tol;
     null_vce_opts.verbose = false;
+    null_vce_opts.use_reml_correction = true;
+    null_vce_opts.use_dense_reml_refinement = true;
     if (options_.use_aireml) {
         null_vce_opts.solver = MvEigenVce::VceSolver::AIREML;
         null_vce_opts.em_min_iter = options_.em_min_iter;

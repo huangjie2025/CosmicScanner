@@ -719,6 +719,8 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     opts.k_file = cfg.multivariate_k_file;
     opts.compare_vg = cfg.multivariate_compare_vg;
     opts.compare_ve = cfg.multivariate_compare_ve;
+    opts.init_vg = cfg.multivariate_init_vg;
+    opts.init_ve = cfg.multivariate_init_ve;
     opts.reml_maxit = std::max(cfg.reml_maxit, opts.use_gemma_exact ? cfg.multivariate_emi : ((opts.use_emmv || opts.use_gemma_refit) ? 1000 : 100));
     opts.reml_tol = (opts.use_emmv || opts.use_gemma_refit) ? std::min(cfg.reml_tol, 1e-8) : cfg.reml_tol;
     opts.refine_top = cfg.multivariate_refine_top;
@@ -876,6 +878,8 @@ void MultivariateModel::run() {
              << "scan_tier\t" << resolved_tier << "\n"
              << "statistical_test\t" << test_label << "\n"
              << "null_solver\t" << null_solver << "\n"
+             << "objective_type\tREML\n"
+             << "null_optimizer\t" << (options_.use_gemma_refit ? "em_reml_correction+dense_reml_refinement" : null_solver) << "\n"
              << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
              << "fallback\tnone\n"
              << "multivariate_method\t" << options_.method_name << "\n"
@@ -1106,8 +1110,17 @@ void MultivariateModel::runNullOnlyDiagnostic() {
     vce_opts.max_iter = options_.reml_maxit;
     vce_opts.tol = options_.reml_tol;
     vce_opts.verbose = false;
+    vce_opts.use_reml_correction = true;
+    vce_opts.use_dense_reml_refinement = true;
     MvEigenVce vce(vce_opts);
     vce.prepare(Y_, X_, K);
+    if (!options_.init_vg.empty() || !options_.init_ve.empty()) {
+        if (options_.init_vg.empty() || options_.init_ve.empty()) {
+            throw std::runtime_error("--mv-init-vg and --mv-init-ve must be provided together");
+        }
+        vce.setInitialComponents(mv_parse_square_matrix_arg(options_.init_vg, Y_.cols(), "--mv-init-vg"),
+                                 mv_parse_square_matrix_arg(options_.init_ve, Y_.cols(), "--mv-init-ve"));
+    }
     bool converged = vce.runNullModel();
     Eigen::MatrixXd Vg = vce.getVg();
     Eigen::MatrixXd Ve = vce.getVe();
@@ -1136,6 +1149,9 @@ void MultivariateModel::runNullOnlyDiagnostic() {
     mv_write_matrix(out, (Yc.transpose() * Yc) / std::max(1, n_keep_ - 1));
     out << "\n";
     out << "cosmic_converged\t" << (converged ? "yes" : "no") << "\n";
+    out << "cosmic_iterations\t" << vce.getLastIterations() << "\n";
+    out << "cosmic_update_norm\t" << vce.getLastUpdateNorm() << "\n";
+    out << "cosmic_internal_loglik\t" << vce.getLastLogLikelihood() << "\n";
     out << "cosmic_Vg\t"; mv_write_matrix(out, Vg); out << "\n";
     out << "cosmic_Ve\t"; mv_write_matrix(out, Ve); out << "\n";
     out << "cosmic_reml_loglik\t" << cosmic_eval.loglik << "\n";

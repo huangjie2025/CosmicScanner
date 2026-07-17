@@ -116,6 +116,7 @@ if(BUILD_TESTING)
   add_test(NAME mv_reml_objective_dense COMMAND test_mv_reml_dense objective)
   add_test(NAME mv_reml_gradient_finite_difference COMMAND test_mv_reml_dense gradient)
   add_test(NAME mv_reml_update_monotonicity COMMAND test_mv_reml_dense monotonicity)
+  add_test(NAME mv_reml_dense_multistart COMMAND test_mv_reml_dense multistart)
 
   find_program(BASH_EXECUTABLE NAMES bash)
   if(BASH_EXECUTABLE)
