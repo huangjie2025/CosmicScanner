@@ -23,6 +23,7 @@ public:
         bool no_loco = false;
         std::string scan_tier;
         std::string method_name = "emmv";
+        std::string compatibility_mode = "none";
         bool use_covariate_projection = true;
         bool use_emmv = true;
         bool use_gemma_refit = false;

@@ -20,6 +20,17 @@ else()
 endif()
 option(COSMICSCANNER_ENABLE_BLAS "Enable BLAS acceleration" OFF)
 
+execute_process(
+  COMMAND git rev-parse --short=12 HEAD
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE COSMICSCANNER_GIT_COMMIT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT COSMICSCANNER_GIT_COMMIT)
+  set(COSMICSCANNER_GIT_COMMIT "unknown")
+endif()
+
 set(GWAS_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/a_matrix.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/adaptive_trace_estimator.cpp
@@ -75,6 +86,7 @@ if(WIN32)
 endif()
 target_compile_definitions(cosmicscanner PRIVATE ${COSMICSCANNER_EXTRA_DEFS})
 target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_GIT_COMMIT="${COSMICSCANNER_GIT_COMMIT}")
 if(APPLE)
   set_target_properties(cosmicscanner PROPERTIES INSTALL_RPATH "@loader_path/../lib")
 endif()

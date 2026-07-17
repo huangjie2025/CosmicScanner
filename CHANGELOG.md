@@ -15,7 +15,8 @@
 - Hybrid 和 GxE 多性状入口在 focused release 中明确标记为 unsupported，并在参数解析
   阶段报错。
 - `.scan.meta.txt` 增加 model、scan tier、statistical test、null solver、
-  LOCO/no-LOCO、fallback policy 和 multivariate method 字段。
+  LOCO/no-LOCO、fallback policy、multivariate method、release version、
+  Git commit 和 release status 字段。
 - README、USER_MANUAL 和 release validation 示例与实际 CLI 对齐。
 
 ## v1.1.2 (2026-07-15)

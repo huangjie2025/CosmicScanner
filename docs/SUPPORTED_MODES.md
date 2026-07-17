@@ -21,7 +21,7 @@ exercise the path successfully.
 | Multivariate exact full | GEMMA-style exact full refit, no-LOCO | Stable | `--mv-method gemma-exact-full --no-loco` or `--scan-tier exact --no-loco` |
 | Multivariate EB | Random-SNP EB Wald path | Experimental | `--mv-method eb` |
 | EMmvGWAS compatibility | EMmvGWAS coding/no-LOCO compatibility | Experimental | `--emmvgwas` |
-| Repeatability exact | Record-level GLS, approx/semi/exact tiers | Stable | `--repeatability-mode exact --scan-tier approx/semi/exact` |
+| Repeatability exact mode | Record-level GLS with approx/semi/exact scan tiers | Stable | `--repeatability-mode exact --scan-tier approx/semi/exact` |
 | Repeatability fast | Woodbury-style accelerated scan | Stable | `--repeatability-mode fast` |
 | Repeatability STCG | Matrix-free repeatability scan | Stable | `--repeatability-mode stcg` |
 | A/G/H matrices | A-inverse, G, H-inverse | Stable | `--make-agh` |
@@ -36,6 +36,9 @@ exercise the path successfully.
 - `--scan-tier semi`: null variance-component ratio is fixed; per-SNP residual
   scale is profiled.
 - `--scan-tier exact`: per-SNP alternative variance components are refit.
+- For repeatability, `exact`, `fast`, and `stcg` are `--repeatability-mode`
+  values. `approx`, `semi`, and `exact` are scan tiers used only with
+  `--repeatability-mode exact`; `semi` is not a repeatability mode.
 - `--lmm-gemma-mode 1/2/3/4`: selects Wald, LRT, Score, or all three LMM test
   outputs. Mode 4 writes `P_WALD`, `P_LRT`, and `P_SCORE`; the primary `P`
   column remains Wald-oriented.

@@ -18,6 +18,13 @@
 #include "lmm_engine.h"
 #include "mvlmm_engine.h"
 
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+#ifndef COSMICSCANNER_GIT_COMMIT
+#define COSMICSCANNER_GIT_COMMIT "unknown"
+#endif
+
 namespace cosmic {
 
 // Forward declaration
@@ -95,6 +102,9 @@ void GwasScanner::runLocoScan(
     {
         std::ofstream meta(options.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
+             << "release_version\t" << COSMICSCANNER_VERSION << "\n"
+             << "git_commit\t" << COSMICSCANNER_GIT_COMMIT << "\n"
+             << "release_status\tstable\n"
              << "analysis_model\tunivariate_lmm\n"
              << "model\tstandard_gaussian_lmm\n"
              << "requested_scan_tier\t" << (options.scan_tier.empty() ? "legacy_default" : options.scan_tier) << "\n"

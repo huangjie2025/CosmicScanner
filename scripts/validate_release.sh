@@ -15,6 +15,8 @@ esac
 BIN="${BUILD_DIR}/cosmicscanner${EXE_SUFFIX}"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}"
+printf 'rs1\nrs2\nrs3\n' >"${OUT_DIR}/extract.txt"
+printf 'rs2\n' >"${OUT_DIR}/exclude.txt"
 
 run_case() {
   local name="$1"
@@ -46,6 +48,13 @@ if "${BIN}" --bfile "${ROOT_DIR}/examples/test_data" --pheno "${ROOT_DIR}/exampl
   exit 1
 fi
 grep -q "unavailable in this focused release" "${OUT_DIR}/bad_hybrid.log"
+if "${BIN}" --bfile "${ROOT_DIR}/examples/test_data" --pheno "${ROOT_DIR}/examples/test_data.pheno" \
+  --mpheno-list 1,2 --multivariate --gwas --mv-method gemma-gxe --out "${OUT_DIR}/bad_gxe" \
+  >"${OUT_DIR}/bad_gxe.log" 2>&1; then
+  echo "Unsupported --mv-method gemma-gxe was not rejected" >&2
+  exit 1
+fi
+grep -q "unavailable in this focused release" "${OUT_DIR}/bad_gxe.log"
 
 run_case "single-trait LMM" \
   "${BIN}" \
@@ -158,7 +167,32 @@ assert_header_has "${OUT_DIR}/multivariate_gemma_exact_full.assoc.mv.txt" "P_SCO
 assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "multivariate_method" "gemma-exact-full"
 assert_meta "${OUT_DIR}/multivariate_gemma_exact_full.scan.meta.txt" "statistical_test" "wald,lrt,score"
 
-run_case "repeatability semi" \
+run_case "multivariate EB experimental" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --multivariate --gwas --mv-method eb --no-loco \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_eb"
+test -s "${OUT_DIR}/multivariate_eb.assoc.mv.txt"
+assert_meta "${OUT_DIR}/multivariate_eb.scan.meta.txt" "multivariate_method" "eb"
+assert_meta "${OUT_DIR}/multivariate_eb.scan.meta.txt" "release_status" "experimental"
+
+run_case "multivariate EMmvGWAS compatibility experimental" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_multivariate.pheno" \
+  --mpheno-list 1,2 \
+  --emmvgwas --gwas \
+  --chr 1 --from-bp 10000 --to-bp 20000 \
+  --out "${OUT_DIR}/multivariate_emmvgwas"
+test -s "${OUT_DIR}/multivariate_emmvgwas.assoc.mv.txt"
+assert_meta "${OUT_DIR}/multivariate_emmvgwas.scan.meta.txt" "multivariate_method" "emmv"
+assert_meta "${OUT_DIR}/multivariate_emmvgwas.scan.meta.txt" "compatibility_mode" "emmvgwas"
+assert_meta "${OUT_DIR}/multivariate_emmvgwas.scan.meta.txt" "release_status" "experimental"
+
+run_case "repeatability exact mode, scan-tier semi" \
   "${BIN}" \
   --bfile "${ROOT_DIR}/examples/test_data" \
   --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
@@ -169,6 +203,8 @@ run_case "repeatability semi" \
 test -s "${OUT_DIR}/repeatability_semi.assoc.txt"
 test -s "${OUT_DIR}/repeatability_semi.repeatability.null.txt"
 test -s "${OUT_DIR}/repeatability_semi.scan.meta.txt"
+assert_meta "${OUT_DIR}/repeatability_semi.scan.meta.txt" "release_status" "stable"
+assert_meta "${OUT_DIR}/repeatability_semi.scan.meta.txt" "scan_tier" "semi"
 
 run_case "repeatability fast comparison" \
   "${BIN}" \
@@ -179,6 +215,18 @@ run_case "repeatability fast comparison" \
   --repeatability-model --repeatability-mode fast --no-loco --gwas \
   --out "${OUT_DIR}/repeatability_fast"
 test -s "${OUT_DIR}/repeatability_fast.assoc.txt"
+
+run_case "repeatability STCG filtered smoke" \
+  "${BIN}" \
+  --bfile "${ROOT_DIR}/examples/test_data" \
+  --pheno "${ROOT_DIR}/examples/demo_repeatability.pheno" \
+  --qcovar "${ROOT_DIR}/examples/demo_repeatability.qcovar" \
+  --tpheno 1 --mpheno 2 \
+  --repeatability-model --repeatability-mode stcg --no-loco --gwas \
+  --chr 1 --from-bp 1000 --to-bp 3000 \
+  --extract "${OUT_DIR}/extract.txt" --exclude "${OUT_DIR}/exclude.txt" \
+  --out "${OUT_DIR}/repeatability_stcg"
+test -s "${OUT_DIR}/repeatability_stcg.stcg.assoc.txt"
 
 run_case "A/G/H matrix construction" \
   "${BIN}" \

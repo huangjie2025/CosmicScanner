@@ -20,6 +20,13 @@
 #include "grm_builder.h"
 #include "mvlmm_engine.h"
 
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+#ifndef COSMICSCANNER_GIT_COMMIT
+#define COSMICSCANNER_GIT_COMMIT "unknown"
+#endif
+
 namespace cosmic {
 
 static double mv_gamma_q(double a, double x) {
@@ -588,6 +595,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
             opts.grm_alg = 6;
             opts.use_covariate_projection = false;
             opts.use_emmvgwas_lambda = true;
+            opts.compatibility_mode = "emmvgwas";
         } else {
             throw std::runtime_error("Unknown --mv-compatible: " + cfg.multivariate_compatible + ". Supported value: emmvgwas");
         }
@@ -649,6 +657,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
         throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: wald, emmv, gemma, gemma-full, gemma-exact-full, eb");
     }
     opts.method_name = method;
+    if (opts.use_emmvgwas_lambda) opts.method_name = "emmv";
     if (cfg.multivariate_eb || cfg.eb_lmm) { opts.use_eb = true; opts.use_emmv = false; }
     opts.test_wald = contains_mv_test(cfg.multivariate_tests, "wald");
     opts.test_lrt = contains_mv_test(cfg.multivariate_tests, "lrt");
@@ -805,9 +814,13 @@ void MultivariateModel::run() {
     const std::string null_solver = options_.use_gemma_refit
         ? (options_.use_gemma_exact ? "gemma_exact_em" : "gemma_em")
         : (options_.use_emmv ? (options_.use_emmvgwas_lambda ? "emmvgwas_em" : "em_mv") : "fixed_null");
+    const std::string release_status = (options_.use_eb || options_.use_emmvgwas_lambda) ? "experimental" : "stable";
     {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
+             << "release_version\t" << COSMICSCANNER_VERSION << "\n"
+             << "git_commit\t" << COSMICSCANNER_GIT_COMMIT << "\n"
+             << "release_status\t" << release_status << "\n"
              << "analysis_model\tmultivariate_lmm\n"
              << "model\tmultivariate_lmm\n"
              << "requested_scan_tier\t" << (options_.scan_tier.empty() ? "legacy_method" : options_.scan_tier) << "\n"
@@ -818,6 +831,7 @@ void MultivariateModel::run() {
              << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
              << "fallback\tnone\n"
              << "multivariate_method\t" << options_.method_name << "\n"
+             << "compatibility_mode\t" << options_.compatibility_mode << "\n"
              << "snp_vc_strategy\t" << vc_strategy << "\n";
     }
     std::cout << "Multivariate scan tier: " << resolved_tier << " (" << vc_strategy << ")\n";

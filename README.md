@@ -58,6 +58,7 @@ The BGEN reader currently requires diploid, unphased, biallelic variants with
 - `docs/USER_MANUAL_EN.md`: comprehensive English user manual.
 - `docs/USER_MANUAL_CN.md`: comprehensive Chinese user manual.
 - `docs/SUPPORTED_MODES.md`: frozen support matrix and v1.1.3 release notes.
+- `docs/RELEASE_TEST_COVERAGE.md`: mode-to-smoke-test coverage matrix.
 - `docs/TROUBLESHOOTING.md`: solutions for common build, runtime, and output issues.
 
 ## Dependencies

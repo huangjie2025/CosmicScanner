@@ -257,8 +257,9 @@ Key-value: n_records, n_subjects, Vg, Vpe, Ve, Vp, h2, r2, timing, scan mode.
 
 ### scan.meta.txt
 
-analysis_model, model, requested_scan_tier, resolved_scan_tier, scan_tier,
-statistical_test, null_solver, loco, fallback, multivariate_method,
+release_version, git_commit, release_status, analysis_model, model,
+requested_scan_tier, resolved_scan_tier, scan_tier, statistical_test,
+null_solver, loco, fallback, multivariate_method, compatibility_mode,
 snp_vc_strategy.
 
 ### Matrix .bin/.id

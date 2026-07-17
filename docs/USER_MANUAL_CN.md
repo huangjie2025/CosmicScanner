@@ -98,7 +98,7 @@ cosmicscanner --bfile data --make-agh --ped ped.txt --genotyped-list geno.txt --
 | .assoc.txt | CHR, SNP, BP, A1, A2, FREQ, N, BETA, SE, P, LOG10P |
 | .assoc.mv.txt | 多性状: WALD_STAT, P, BETA_t, SE_t |
 | .repeatability.null.txt | Vg, Vpe, Ve, h2, r2, 时间统计 |
-| .scan.meta.txt | analysis_model, model, scan_tier, statistical_test, null_solver, loco, fallback, multivariate_method, vc_strategy |
+| .scan.meta.txt | release_version, git_commit, release_status, analysis_model, model, scan_tier, statistical_test, null_solver, loco, fallback, multivariate_method, compatibility_mode, vc_strategy |
 | .Ainv.bin/.id | A⁻¹ 矩阵下三角 + ID |
 | .G.bin/.id | G 矩阵下三角 + ID |
 | .Hinv.bin/.id | H⁻¹ 矩阵下三角 + ID |

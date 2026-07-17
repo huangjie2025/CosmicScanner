@@ -21,6 +21,13 @@
 #include <vector>
 #include <omp.h>
 
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+#ifndef COSMICSCANNER_GIT_COMMIT
+#define COSMICSCANNER_GIT_COMMIT "unknown"
+#endif
+
 namespace cosmic {
 namespace {
 
@@ -312,6 +319,9 @@ void RepeatabilityModel::scanExact() {
     {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
+             << "release_version\t" << COSMICSCANNER_VERSION << "\n"
+             << "git_commit\t" << COSMICSCANNER_GIT_COMMIT << "\n"
+             << "release_status\tstable\n"
              << "analysis_model\trepeatability_lmm\n"
              << "model\trecord_level_repeatability_lmm\n"
              << "requested_scan_tier\t" << (options_.scan_tier.empty() ? "legacy_default" : options_.scan_tier) << "\n"
