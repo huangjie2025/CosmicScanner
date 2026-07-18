@@ -200,6 +200,7 @@ UnivariateModel::Options UnivariateModel::Options::fromConfig(const GwasConfig& 
     opts.set_file = cfg.set_file;
     opts.extract_file = cfg.extract_file;
     opts.exclude_file = cfg.exclude_file;
+    opts.k_file = cfg.k_file;
     opts.pheno_file = cfg.pheno_file;
     opts.qcovar_file = cfg.qcovar_file;
     opts.covar_file = cfg.covar_file;
@@ -288,6 +289,7 @@ void UnivariateModel::run() {
     opts.scan_to_bp = options_.scan_to_bp;
     opts.extract_file = options_.extract_file;
     opts.exclude_file = options_.exclude_file;
+    opts.k_file = options_.k_file;
 
     GwasScanner scanner(opts);
 

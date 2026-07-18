@@ -49,6 +49,7 @@ public:
         std::string set_file;
         std::string extract_file;
         std::string exclude_file;
+        std::string k_file;
         std::string pheno_file;
         std::string qcovar_file;
         std::string covar_file;

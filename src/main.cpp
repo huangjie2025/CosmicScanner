@@ -96,7 +96,8 @@ void print_usage(const char* prog) {
               << "  --lmm-gemma-mode <mode>       LMM primary/output P. Values: " << kLmmGemmaModeValues << "\n"
               << "                                Default: 0 legacy P column; mode 4 emits P_WALD/P_LRT/P_SCORE\n"
               << "  --lmm-null-solver <solver>    Null-model solver only. Values: " << kNullSolverValues << "\n"
-              << "                                Default: brent. IDUL-family solvers fall back to brent if needed.\n\n"
+              << "                                Default: brent. IDUL-family solvers fall back to brent if needed.\n"
+              << "  --k-file <file>               External dense K for single-trait LMM; requires --no-loco\n\n"
               << "Multivariate GWAS:\n"
               << "  --multivariate --mpheno-list 1,2[,3...] --mv-method <method>\n"
               << "  --mv-method <method>          Values: " << kMvMethodValues << "\n"
@@ -187,6 +188,7 @@ int main(int argc, char** argv) {
             else if (a == "--mv-output-vbeta") cfg.multivariate_output_vbeta = true;
             else if (a == "--mv-null-only") { cfg.multivariate = true; cfg.multivariate_null_only = true; cfg.run_gwas = true; }
             else if (a == "--mv-gemma-force-iterations") cfg.multivariate_gemma_force_iterations = std::stoi(need("--mv-gemma-force-iterations"));
+            else if (a == "--k-file") cfg.k_file = need("--k-file");
             else if (a == "--mv-k-file") cfg.multivariate_k_file = need("--mv-k-file");
             else if (a == "--mv-compare-vg") cfg.multivariate_compare_vg = need("--mv-compare-vg");
             else if (a == "--mv-compare-ve") cfg.multivariate_compare_ve = need("--mv-compare-ve");

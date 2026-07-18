@@ -50,6 +50,7 @@ public:
         std::string set_file;
         std::string extract_file;
         std::string exclude_file;
+        std::string k_file;
         int rrm_curve_grid = 21;
         int rrm_top = 100;
         int rrm_ai_iter = -1;
