@@ -124,6 +124,10 @@ if(BUILD_TESTING)
       NAME critical_regressions
       COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/run_critical_regressions.sh $<TARGET_FILE:cosmicscanner>
     )
+    add_test(
+      NAME test_mvlmm_gemma_compat_reference
+      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/run_mvlmm_gemma_compat_reference.sh $<TARGET_FILE:cosmicscanner>
+    )
   else()
     message(WARNING "Bash not found; critical regression tests are unavailable")
   endif()
