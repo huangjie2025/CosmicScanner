@@ -1,5 +1,7 @@
 #include "multivariate_model.h"
 #include "multivariate_helpers.h"
+#include "mv_em_update.h"
+#include "mv_reml_dense.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -12,13 +14,22 @@
 #include <iomanip>
 #include <filesystem>
 #include <cctype>
+#include <numeric>
 #include <omp.h>
+#include <unsupported/Eigen/KroneckerProduct>
 #include "pheno_reader.h"
 #include "covar_reader.h"
 #include "data_filter.h"
 #include "data_loader.h"
 #include "grm_builder.h"
 #include "mvlmm_engine.h"
+
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+#ifndef COSMICSCANNER_GIT_COMMIT
+#define COSMICSCANNER_GIT_COMMIT "unknown"
+#endif
 
 namespace cosmic {
 
@@ -127,7 +138,11 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
                                 Eigen::MatrixXd& Vg,
                                 Eigen::MatrixXd& Ve,
                                 const Eigen::MatrixXd* init_vg,
-                                const Eigen::MatrixXd* init_ve) {
+                                const Eigen::MatrixXd* init_ve,
+                                int* iterations_out,
+                                double* update_norm_out,
+                                std::string* stop_reason_out,
+                                bool loglik_stop) {
     int n = UtY.rows();
     int d = UtY.cols();
     if (init_vg && init_ve) {
@@ -144,10 +159,23 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
     Vg.diagonal().array() += 1e-8;
     Ve.diagonal().array() += 1e-8;
 
+    if (iterations_out) *iterations_out = 0;
+    if (update_norm_out) *update_norm_out = std::numeric_limits<double>::quiet_NaN();
+    if (stop_reason_out) *stop_reason_out = "not_started";
+
+    double loglik_old = std::numeric_limits<double>::quiet_NaN();
     for (int iter = 0; iter < max_iter; ++iter) {
         Eigen::VectorXd beta;
         Eigen::MatrixXd beta_cov;
-        if (!mv_fit_gls(UtY, UtX, D, Vg, Ve, beta, beta_cov, nullptr)) return false;
+        double loglik_new = std::numeric_limits<double>::quiet_NaN();
+        if (!mv_fit_gls(UtY, UtX, D, Vg, Ve, beta, beta_cov,
+                        loglik_stop ? &loglik_new : nullptr)) return false;
+        if (loglik_stop && iter != 0 && std::isfinite(loglik_new) &&
+            std::isfinite(loglik_old) && std::abs(loglik_new - loglik_old) < tol) {
+            if (stop_reason_out) *stop_reason_out = "loglik_tolerance";
+            return true;
+        }
+        if (loglik_stop) loglik_old = loglik_new;
 
         Eigen::MatrixXd Sg = Eigen::MatrixXd::Zero(d, d);
         Eigen::MatrixXd Se = Eigen::MatrixXd::Zero(d, d);
@@ -163,13 +191,23 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
             if (ldlt.info() != Eigen::Success) return false;
             Eigen::MatrixXd Pinv = ldlt.solve(Eigen::MatrixXd::Identity(d, d));
 
-            Eigen::MatrixXd Wg = Vg * D(i) * Pinv;
-            Eigen::VectorXd uhat = Wg * resid;
-            Sg += uhat * uhat.transpose() + Vg * D(i) - Wg * Vg * D(i);
+            Sg += mv_em_genetic_contribution(D(i), Vg, Pinv, resid);
 
             Eigen::MatrixXd We = Ve * Pinv;
             Eigen::VectorXd ehat = We * resid;
             Se += ehat * ehat.transpose() + Ve - We * Ve;
+
+            if (UtX.cols() > 0) {
+                Eigen::VectorXd xi = UtX.row(i).transpose();
+                Eigen::MatrixXd Xi = Eigen::kroneckerProduct(
+                    xi.transpose(), Eigen::MatrixXd::Identity(d, d));
+                Eigen::MatrixXd beta_unc = Xi * beta_cov * Xi.transpose();
+                Eigen::MatrixXd Wg = Vg * D(i) * Pinv;
+                if (D(i) > 1e-12) {
+                    Sg += Wg * beta_unc * Wg.transpose() / D(i);
+                }
+                Se += We * beta_unc * We.transpose();
+            }
         }
 
         Eigen::MatrixXd Vg_new = 0.5 * (Sg / n + (Sg / n).transpose());
@@ -181,8 +219,15 @@ bool mv_em_refit_rotated(const Eigen::MatrixXd& UtY,
         Vg = Vg_new;
         Ve = Ve_new;
         if (!Vg.allFinite() || !Ve.allFinite()) return false;
-        if (err < tol) return true;
+        if (iterations_out) *iterations_out = iter + 1;
+        if (update_norm_out) *update_norm_out = err;
+        if (!loglik_stop && err < tol) {
+            if (stop_reason_out) *stop_reason_out = "tolerance";
+            return true;
+        }
     }
+    if (iterations_out) *iterations_out = max_iter;
+    if (stop_reason_out) *stop_reason_out = "max_iterations";
     return true;
 }
 
@@ -219,6 +264,43 @@ static Eigen::MatrixXd mv_trait_derivative_matrix(int d, int idx) {
         }
     }
     return M;
+}
+
+static Eigen::MatrixXd mv_load_dense_matrix(const std::string& path, int n) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Cannot open matrix file: " + path);
+    Eigen::MatrixXd M(n, n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            if (!(in >> M(i, j))) throw std::runtime_error("Matrix file has fewer values than expected: " + path);
+        }
+    }
+    return M;
+}
+
+static Eigen::MatrixXd mv_parse_square_matrix_arg(const std::string& s, int d, const std::string& name) {
+    Eigen::MatrixXd M(d, d);
+    std::stringstream ss(s);
+    std::string item;
+    std::vector<double> vals;
+    while (std::getline(ss, item, ',')) {
+        if (!item.empty()) vals.push_back(std::stod(item));
+    }
+    if ((int)vals.size() != d * d) throw std::runtime_error(name + " expects d*d comma-separated values");
+    for (int i = 0, k = 0; i < d; ++i) {
+        for (int j = 0; j < d; ++j, ++k) M(i, j) = vals[k];
+    }
+    return M;
+}
+
+static void mv_write_matrix(std::ostream& os, const Eigen::MatrixXd& M) {
+    os << std::setprecision(12);
+    for (int i = 0; i < M.rows(); ++i) {
+        for (int j = 0; j < M.cols(); ++j) {
+            if (i || j) os << ',';
+            os << M(i, j);
+        }
+    }
 }
 
 static void mv_add_kron(Eigen::MatrixXd& out,
@@ -588,6 +670,7 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
             opts.grm_alg = 6;
             opts.use_covariate_projection = false;
             opts.use_emmvgwas_lambda = true;
+            opts.compatibility_mode = "emmvgwas";
         } else {
             throw std::runtime_error("Unknown --mv-compatible: " + cfg.multivariate_compatible + ". Supported value: emmvgwas");
         }
@@ -599,11 +682,13 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     if (!opts.use_emmvgwas_lambda) opts.use_covariate_projection = cfg.use_covariate_projection;
     opts.use_emmv = true;
     opts.use_gemma_refit = false;
+    opts.use_gemma_compat = false;
     opts.use_gemma_full = false;
     opts.use_gemma_exact = false;
     opts.use_gemma_gxe = false;
     opts.use_hybrid = false;
     std::string method = cfg.multivariate_method;
+    opts.requested_method = method;
     if (!opts.scan_tier.empty() && cfg.multivariate_method_explicit) {
         const std::string expected = opts.scan_tier == "approx" ? "wald"
                                    : opts.scan_tier == "semi" ? "emmv" : "gemma-exact";
@@ -628,31 +713,43 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     } else if (method == "gemma") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method gemma is deprecated experimental GEMMA-style mode; use --mv-method gemma-compat for GEMMA default finite-EM compatibility.\n";
+    } else if (method == "gemma-compat" || method == "gemma-default") {
+        opts.use_emmv = false;
+        opts.use_gemma_refit = true;
+        opts.use_gemma_compat = true;
+        if (method == "gemma-default") {
+            opts.deprecated_alias = true;
+            std::cerr << "Warning: --mv-method gemma-default is an alias; preferred spelling is --mv-method gemma-compat.\n";
+        }
     } else if (method == "gemma-full") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
         opts.use_gemma_full = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method gemma-full is deprecated experimental GEMMA-style mode; use --mv-method gemma-compat for GEMMA default finite-EM compatibility.\n";
     } else if (method == "gemma-exact" || method == "gemma-exact-full") {
         opts.use_emmv = false;
         opts.use_gemma_refit = true;
         opts.use_gemma_full = true;
         opts.use_gemma_exact = true;
-    } else if (method == "gemma-gxe" || method == "gxe") {
-        opts.use_emmv = false;
-        opts.use_gemma_gxe = true;
-    } else if (method == "gemma-gxe-full" || method == "gxe-full") {
-        opts.use_emmv = false;
-        opts.use_gemma_gxe = true;
-        opts.use_gemma_full = true;
-    } else if (method == "hybrid") {
-        opts.use_emmv = true;
-        opts.use_hybrid = true;
+        opts.deprecated_alias = true;
+        std::cerr << "Warning: --mv-method " << method << " is deprecated experimental GEMMA-style mode and is not a validated fully converged exact REML mode.\n";
+    } else if (method == "gemma-gxe" || method == "gxe"
+               || method == "gemma-gxe-full" || method == "gxe-full"
+               || method == "hybrid") {
+        throw std::runtime_error("--mv-method " + method
+            + " is unavailable in this focused release. Supported values: wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb");
     } else if (method == "eb" || method == "eb-lmm" || method == "lmm-eb") {
         opts.use_eb = true;
         opts.use_emmv = false;
     } else if (method != "emmv") {
-        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: emmv, wald, eb, gemma, gemma-full, gemma-exact, gemma-gxe, gemma-gxe-full, hybrid");
+        throw std::runtime_error("Unknown --mv-method: " + method + ". Supported values: wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb");
     }
+    opts.method_name = method;
+    if (opts.use_gemma_compat) opts.method_name = "gemma-compat";
+    if (opts.use_emmvgwas_lambda) opts.method_name = "emmv";
     if (cfg.multivariate_eb || cfg.eb_lmm) { opts.use_eb = true; opts.use_emmv = false; }
     opts.test_wald = contains_mv_test(cfg.multivariate_tests, "wald");
     opts.test_lrt = contains_mv_test(cfg.multivariate_tests, "lrt");
@@ -672,6 +769,13 @@ MultivariateModel::Options MultivariateModel::Options::fromConfig(const GwasConf
     opts.gemma_emp = cfg.multivariate_emp;
     opts.gemma_nrp = cfg.multivariate_nrp;
     opts.gemma_crt = cfg.multivariate_crt;
+    opts.null_only = cfg.multivariate_null_only;
+    opts.gemma_force_iterations = cfg.multivariate_gemma_force_iterations;
+    opts.k_file = cfg.multivariate_k_file;
+    opts.compare_vg = cfg.multivariate_compare_vg;
+    opts.compare_ve = cfg.multivariate_compare_ve;
+    opts.init_vg = cfg.multivariate_init_vg;
+    opts.init_ve = cfg.multivariate_init_ve;
     opts.reml_maxit = std::max(cfg.reml_maxit, opts.use_gemma_exact ? cfg.multivariate_emi : ((opts.use_emmv || opts.use_gemma_refit) ? 1000 : 100));
     opts.reml_tol = (opts.use_emmv || opts.use_gemma_refit) ? std::min(cfg.reml_tol, 1e-8) : cfg.reml_tol;
     opts.refine_top = cfg.multivariate_refine_top;
@@ -797,26 +901,59 @@ void MultivariateModel::loadCovariates() {
 }
 
 void MultivariateModel::run() {
+    if (options_.null_only) {
+        runNullOnlyDiagnostic();
+        return;
+    }
     const std::string resolved_tier = options_.scan_tier.empty()
         ? (options_.use_hybrid ? "approx" : (options_.use_gemma_refit ? "exact" : (options_.use_emmv ? "semi" : "approx")))
         : options_.scan_tier;
     const std::string vc_strategy = resolved_tier == "exact" ? "per_snp_full_covariance_refit"
                                   : resolved_tier == "semi" ? "fixed_covariance_ratio_profile_residual"
                                                              : "fixed_null_covariance";
+    const std::string test_label = options_.use_gemma_full || options_.use_gemma_exact
+        ? "wald,lrt,score"
+        : "wald";
+    const std::string null_solver = options_.use_gemma_refit
+        ? (options_.use_gemma_exact ? "gemma_exact_em" : "gemma_em")
+        : (options_.use_emmv ? (options_.use_emmvgwas_lambda ? "emmvgwas_em" : "em_mv") : "fixed_null");
+    const int gemma_default_alt_maxit = std::max(1, options_.gemma_emi / 10);
+    const double gemma_default_alt_tol = options_.gemma_emp * 10.0;
+    const std::string release_status = (options_.use_eb || options_.use_emmvgwas_lambda || options_.use_gemma_refit)
+        ? "experimental"
+        : "stable";
     {
         std::ofstream meta(options_.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
+             << "release_version\t" << COSMICSCANNER_VERSION << "\n"
+             << "git_commit\t" << COSMICSCANNER_GIT_COMMIT << "\n"
+             << "release_status\t" << release_status << "\n"
              << "analysis_model\tmultivariate_lmm\n"
+             << "model\tmultivariate_lmm\n"
              << "requested_scan_tier\t" << (options_.scan_tier.empty() ? "legacy_method" : options_.scan_tier) << "\n"
              << "resolved_scan_tier\t" << resolved_tier << "\n"
+             << "scan_tier\t" << resolved_tier << "\n"
+             << "statistical_test\t" << test_label << "\n"
+             << "null_solver\t" << null_solver << "\n"
+             << "objective_type\tREML\n"
+             << "null_optimizer\t" << (options_.use_gemma_refit ? "em_reml_correction+dense_reml_refinement" : null_solver) << "\n"
+             << "compatibility_target\t" << (options_.use_gemma_compat ? "gemma_default_finite_em" : "none") << "\n"
+             << "per_snp_max_iterations\t" << (options_.use_gemma_compat ? gemma_default_alt_maxit : 0) << "\n"
+             << "per_snp_convergence_tolerance\t" << (options_.use_gemma_compat ? gemma_default_alt_tol : 0.0) << "\n"
+             << "requested_method\t" << options_.requested_method << "\n"
+             << "resolved_method\t" << options_.method_name << "\n"
+             << "deprecated_alias\t" << (options_.deprecated_alias ? "true" : "false") << "\n"
+             << "forced_wald_iterations\t" << options_.gemma_force_iterations << "\n"
+             << "grm_scaling\t" << (options_.k_file.empty() ? "default_vanraden_centered_sum_2pq" : "external_k_file_no_rescaling") << "\n"
+             << "external_k_file\t" << (options_.k_file.empty() ? "none" : options_.k_file) << "\n"
+             << "loco\t" << (options_.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
+             << "fallback\tnone\n"
+             << "multivariate_method\t" << options_.method_name << "\n"
+             << "compatibility_mode\t" << options_.compatibility_mode << "\n"
              << "snp_vc_strategy\t" << vc_strategy << "\n";
     }
     std::cout << "Multivariate scan tier: " << resolved_tier << " (" << vc_strategy << ")\n";
     mv_validate_output_parent(options_.out_prefix);
-
-    if (options_.use_gemma_gxe || options_.use_hybrid) {
-        throw std::runtime_error("Focused source build does not include multivariate GxE or hybrid routes.");
-    }
 
     if (options_.use_gemma_refit) {
         runGemmaRefit();
@@ -1013,6 +1150,108 @@ void MultivariateModel::run() {
         std::cout << "Multivariate EB summary saved to " << eb_summary << std::endl;
     }
     std::cout << "Results saved to " << out_file << std::endl;
+}
+
+void MultivariateModel::runNullOnlyDiagnostic() {
+    if (options_.k_file.empty()) {
+        throw std::runtime_error("--mv-null-only requires --mv-k-file for same-K diagnostics");
+    }
+    Eigen::MatrixXd K_full = mv_load_dense_matrix(options_.k_file, n_samples_);
+    Eigen::MatrixXd K(n_keep_, n_keep_);
+    for (int i = 0; i < n_keep_; ++i) {
+        for (int j = 0; j < n_keep_; ++j) {
+            K(i, j) = K_full(keep_.keep_indices[i], keep_.keep_indices[j]);
+        }
+    }
+    K = 0.5 * (K + K.transpose());
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(K);
+    Eigen::VectorXd D = es.eigenvalues();
+    Eigen::MatrixXd U = es.eigenvectors();
+    Eigen::MatrixXd UtY = U.transpose() * Y_;
+    Eigen::MatrixXd UtX = U.transpose() * X_;
+
+    MvEigenVce::Options vce_opts;
+    vce_opts.use_projection = false;
+    vce_opts.max_iter = options_.reml_maxit;
+    vce_opts.tol = options_.reml_tol;
+    vce_opts.verbose = false;
+    vce_opts.use_reml_correction = true;
+    vce_opts.use_dense_reml_refinement = true;
+    MvEigenVce vce(vce_opts);
+    vce.prepare(Y_, X_, K);
+    if (!options_.init_vg.empty() || !options_.init_ve.empty()) {
+        if (options_.init_vg.empty() || options_.init_ve.empty()) {
+            throw std::runtime_error("--mv-init-vg and --mv-init-ve must be provided together");
+        }
+        vce.setInitialComponents(mv_parse_square_matrix_arg(options_.init_vg, Y_.cols(), "--mv-init-vg"),
+                                 mv_parse_square_matrix_arg(options_.init_ve, Y_.cols(), "--mv-init-ve"));
+    }
+    bool converged = vce.runNullModel();
+    Eigen::MatrixXd Vg = vce.getVg();
+    Eigen::MatrixXd Ve = vce.getVe();
+
+    MvRemlEval cosmic_eval = mv_eval_reml_dense(UtY, UtX, D, Vg, Ve);
+
+    std::ofstream out(options_.out_prefix + ".mv.null.diag.txt");
+    out << "Item\tValue\n";
+    out << "n_samples\t" << n_keep_ << "\n";
+    out << "n_traits\t" << Y_.cols() << "\n";
+    out << "trait_order\t";
+    for (size_t i = 0; i < options_.mpheno_list.size(); ++i) {
+        if (i) out << ',';
+        out << options_.mpheno_list[i];
+    }
+    out << "\n";
+    out << "fixed_effect_rows\t" << X_.rows() << "\n";
+    out << "fixed_effect_cols\t" << X_.cols() << "\n";
+    out << "k_file\t" << options_.k_file << "\n";
+    out << "k_trace\t" << std::setprecision(12) << K.trace() << "\n";
+    out << "k_mean_diag\t" << K.diagonal().mean() << "\n";
+    out << "k_min_eigen\t" << D.minCoeff() << "\n";
+    out << "k_max_eigen\t" << D.maxCoeff() << "\n";
+    out << "phenotype_covariance\t";
+    Eigen::MatrixXd Yc = Y_.rowwise() - Y_.colwise().mean();
+    mv_write_matrix(out, (Yc.transpose() * Yc) / std::max(1, n_keep_ - 1));
+    out << "\n";
+    out << "cosmic_converged\t" << (converged ? "yes" : "no") << "\n";
+    out << "cosmic_iterations\t" << vce.getLastIterations() << "\n";
+    out << "cosmic_update_norm\t" << vce.getLastUpdateNorm() << "\n";
+    out << "cosmic_internal_loglik\t" << vce.getLastLogLikelihood() << "\n";
+    out << "cosmic_Vg\t"; mv_write_matrix(out, Vg); out << "\n";
+    out << "cosmic_Ve\t"; mv_write_matrix(out, Ve); out << "\n";
+    out << "cosmic_reml_loglik\t" << cosmic_eval.loglik << "\n";
+    out << "cosmic_logdet_H\t" << cosmic_eval.logdet_h << "\n";
+    out << "cosmic_logdet_XtHinvX\t" << cosmic_eval.logdet_xt_hinv_x << "\n";
+    out << "cosmic_quad\t" << cosmic_eval.quad << "\n";
+    out << "cosmic_fixed_beta\t";
+    for (int i = 0; i < cosmic_eval.beta.size(); ++i) {
+        if (i) out << ',';
+        out << cosmic_eval.beta(i);
+    }
+    out << "\n";
+
+    if (!options_.compare_vg.empty() || !options_.compare_ve.empty()) {
+        if (options_.compare_vg.empty() || options_.compare_ve.empty()) {
+            throw std::runtime_error("--mv-compare-vg and --mv-compare-ve must be provided together");
+        }
+        Eigen::MatrixXd Vg_cmp = mv_parse_square_matrix_arg(options_.compare_vg, Y_.cols(), "--mv-compare-vg");
+        Eigen::MatrixXd Ve_cmp = mv_parse_square_matrix_arg(options_.compare_ve, Y_.cols(), "--mv-compare-ve");
+        MvRemlEval cmp = mv_eval_reml_dense(UtY, UtX, D, Vg_cmp, Ve_cmp);
+        out << "compare_Vg\t"; mv_write_matrix(out, Vg_cmp); out << "\n";
+        out << "compare_Ve\t"; mv_write_matrix(out, Ve_cmp); out << "\n";
+        out << "compare_reml_loglik\t" << cmp.loglik << "\n";
+        out << "compare_logdet_H\t" << cmp.logdet_h << "\n";
+        out << "compare_logdet_XtHinvX\t" << cmp.logdet_xt_hinv_x << "\n";
+        out << "compare_quad\t" << cmp.quad << "\n";
+        out << "compare_fixed_beta\t";
+        for (int i = 0; i < cmp.beta.size(); ++i) {
+            if (i) out << ',';
+            out << cmp.beta(i);
+        }
+        out << "\n";
+        out << "compare_minus_cosmic_loglik\t" << (cmp.loglik - cosmic_eval.loglik) << "\n";
+    }
 }
 
 

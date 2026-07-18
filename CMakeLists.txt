@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(CosmicScanner VERSION 1.1.2 LANGUAGES CXX)
+project(CosmicScanner VERSION 1.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,25 @@ else()
   message(FATAL_ERROR "A supported zstd CMake target was not found")
 endif()
 option(COSMICSCANNER_ENABLE_BLAS "Enable BLAS acceleration" OFF)
+
+set(COSMICSCANNER_GIT_COMMIT_OVERRIDE "" CACHE STRING "Override Git commit embedded in scan metadata")
+if(COSMICSCANNER_GIT_COMMIT_OVERRIDE)
+  set(COSMICSCANNER_GIT_COMMIT "${COSMICSCANNER_GIT_COMMIT_OVERRIDE}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/COSMICSCANNER_GIT_COMMIT")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/COSMICSCANNER_GIT_COMMIT" COSMICSCANNER_GIT_COMMIT)
+  string(STRIP "${COSMICSCANNER_GIT_COMMIT}" COSMICSCANNER_GIT_COMMIT)
+else()
+  execute_process(
+    COMMAND git rev-parse --short=12 HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE COSMICSCANNER_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+endif()
+if(NOT COSMICSCANNER_GIT_COMMIT)
+  set(COSMICSCANNER_GIT_COMMIT "unknown")
+endif()
 
 set(GWAS_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/a_matrix.cpp
@@ -75,6 +94,7 @@ if(WIN32)
 endif()
 target_compile_definitions(cosmicscanner PRIVATE ${COSMICSCANNER_EXTRA_DEFS})
 target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(cosmicscanner PRIVATE COSMICSCANNER_GIT_COMMIT="${COSMICSCANNER_GIT_COMMIT}")
 if(APPLE)
   set_target_properties(cosmicscanner PROPERTIES INSTALL_RPATH "@loader_path/../lib")
 endif()
@@ -85,11 +105,28 @@ install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/cosmicscanner/docs)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(test_mv_em_update ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mv_em_update.cpp)
+  target_include_directories(test_mv_em_update PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(test_mv_em_update PRIVATE Eigen3::Eigen)
+  add_test(NAME mv_em_update_scaling COMMAND test_mv_em_update)
+
+  add_executable(test_mv_reml_dense ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mv_reml_dense.cpp)
+  target_include_directories(test_mv_reml_dense PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(test_mv_reml_dense PRIVATE Eigen3::Eigen)
+  add_test(NAME mv_reml_objective_dense COMMAND test_mv_reml_dense objective)
+  add_test(NAME mv_reml_gradient_finite_difference COMMAND test_mv_reml_dense gradient)
+  add_test(NAME mv_reml_update_monotonicity COMMAND test_mv_reml_dense monotonicity)
+  add_test(NAME mv_reml_dense_multistart COMMAND test_mv_reml_dense multistart)
+
   find_program(BASH_EXECUTABLE NAMES bash)
   if(BASH_EXECUTABLE)
     add_test(
       NAME critical_regressions
       COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/run_critical_regressions.sh $<TARGET_FILE:cosmicscanner>
+    )
+    add_test(
+      NAME test_mvlmm_gemma_compat_reference
+      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/run_mvlmm_gemma_compat_reference.sh $<TARGET_FILE:cosmicscanner>
     )
   else()
     message(WARNING "Bash not found; critical regression tests are unavailable")

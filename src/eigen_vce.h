@@ -82,6 +82,8 @@ public:
         int ai_max_iter = 50;
         double ai_tol = 1e-8;
         bool use_emmvgwas_lambda = false;
+        bool use_reml_correction = false;
+        bool use_dense_reml_refinement = false;
     };
 
     MvEigenVce();
@@ -103,6 +105,10 @@ public:
     const Eigen::MatrixXd& getProjectedW() const { return W_proj; }
     const Eigen::MatrixXd& getUty() const { return Uty; }
     const Eigen::MatrixXd& getUtX() const { return UtX; }
+    void setInitialComponents(const Eigen::MatrixXd& Vg_init, const Eigen::MatrixXd& Ve_init);
+    int getLastIterations() const { return last_iterations; }
+    double getLastUpdateNorm() const { return last_update_norm; }
+    double getLastLogLikelihood() const { return last_loglik; }
 
 private:
     Options options;
@@ -124,9 +130,13 @@ private:
     Eigen::MatrixXd emmvgwas_G;
     Eigen::MatrixXd emmvgwas_R;
     Eigen::VectorXd emmvgwas_beta;
+    int last_iterations = 0;
+    double last_update_norm = std::numeric_limits<double>::quiet_NaN();
+    double last_loglik = std::numeric_limits<double>::quiet_NaN();
 
     void updateEM(Eigen::MatrixXd& Vg_new, Eigen::MatrixXd& Ve_new);
     bool runAireml(int em_min_iter, int ai_max_iter);
+    bool runDenseRemlRefinement();
     bool runEmmvgwasLambdaNullModel();
     bool isPositiveDefinite(const Eigen::MatrixXd& M) const;
     double calcLogLikelihood() const;

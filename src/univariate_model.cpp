@@ -181,6 +181,7 @@ UnivariateModel::Options UnivariateModel::Options::fromConfig(const GwasConfig& 
     opts.no_loco = cfg.no_loco;
     opts.grm_alg = cfg.grm_alg;
     opts.lmm_null_solver = parse_lmm_null_solver(cfg.lmm_null_solver);
+    opts.lmm_null_solver_name = cfg.lmm_null_solver;
     opts.reml_maxit = cfg.reml_maxit;
     opts.reml_tol = cfg.reml_tol;
     opts.biobank_mode = cfg.biobank_mode;
@@ -199,6 +200,7 @@ UnivariateModel::Options UnivariateModel::Options::fromConfig(const GwasConfig& 
     opts.set_file = cfg.set_file;
     opts.extract_file = cfg.extract_file;
     opts.exclude_file = cfg.exclude_file;
+    opts.k_file = cfg.k_file;
     opts.pheno_file = cfg.pheno_file;
     opts.qcovar_file = cfg.qcovar_file;
     opts.covar_file = cfg.covar_file;
@@ -268,6 +270,7 @@ void UnivariateModel::run() {
     opts.no_loco = options_.no_loco;
     opts.grm_alg = options_.grm_alg;
     opts.lmm_null_solver = options_.lmm_null_solver;
+    opts.lmm_null_solver_name = options_.lmm_null_solver_name;
     opts.reml_maxit = options_.reml_maxit;
     opts.reml_tol = options_.reml_tol;
     opts.biobank_mode = options_.biobank_mode;
@@ -286,6 +289,7 @@ void UnivariateModel::run() {
     opts.scan_to_bp = options_.scan_to_bp;
     opts.extract_file = options_.extract_file;
     opts.exclude_file = options_.exclude_file;
+    opts.k_file = options_.k_file;
 
     GwasScanner scanner(opts);
 

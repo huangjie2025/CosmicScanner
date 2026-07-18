@@ -22,9 +22,14 @@ public:
         int n_threads = 1;
         bool no_loco = false;
         std::string scan_tier;
+        std::string method_name = "emmv";
+        std::string requested_method = "emmv";
+        bool deprecated_alias = false;
+        std::string compatibility_mode = "none";
         bool use_covariate_projection = true;
         bool use_emmv = true;
         bool use_gemma_refit = false;
+        bool use_gemma_compat = false;
         bool use_gemma_full = false;
         bool use_gemma_exact = false;
         bool use_gemma_gxe = false;
@@ -51,6 +56,13 @@ public:
         bool use_aireml = false;
         bool use_emmvgwas_lambda = false;
         bool output_vbeta = false;
+        bool null_only = false;
+        int gemma_force_iterations = -1;
+        std::string k_file;
+        std::string compare_vg;
+        std::string compare_ve;
+        std::string init_vg;
+        std::string init_ve;
         bool output_emmvgwas = false;
         bool emmvgwas_vc_only = false;
         std::string emmvgwas_G_file;
@@ -118,6 +130,7 @@ private:
     void writeResults(const std::string& out_file, const std::vector<MvGwasResult>& results);
     void writeEmmvgwasOutputs(const MvEigenVce& vce, const std::vector<MvGwasResult>& results) const;
     void writeEbSummary(const std::string& out_file) const;
+    void runNullOnlyDiagnostic();
 };
 
 } // namespace cosmic

@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <iomanip>
+#include <sstream>
 #include <unordered_set>
 #include <iterator>
 #include "design.h"
@@ -18,9 +19,54 @@
 #include "lmm_engine.h"
 #include "mvlmm_engine.h"
 
+#ifndef COSMICSCANNER_VERSION
+#define COSMICSCANNER_VERSION "unknown"
+#endif
+#ifndef COSMICSCANNER_GIT_COMMIT
+#define COSMICSCANNER_GIT_COMMIT "unknown"
+#endif
+
 namespace cosmic {
 
 // Forward declaration
+
+namespace {
+
+Eigen::MatrixXd load_external_k_matrix(const std::string& path, int expected_n) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Could not open --k-file: " + path);
+    std::vector<double> values;
+    std::string line;
+    int rows = 0;
+    int cols = -1;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::vector<double> row;
+        double v = 0.0;
+        while (ss >> v) row.push_back(v);
+        if (row.empty()) continue;
+        if (cols < 0) cols = static_cast<int>(row.size());
+        if (static_cast<int>(row.size()) != cols) {
+            throw std::runtime_error("--k-file has inconsistent row lengths: " + path);
+        }
+        values.insert(values.end(), row.begin(), row.end());
+        ++rows;
+    }
+    if (rows != expected_n || cols != expected_n) {
+        std::ostringstream oss;
+        oss << "--k-file dimension mismatch: expected " << expected_n << "x" << expected_n
+            << ", got " << rows << "x" << cols;
+        throw std::runtime_error(oss.str());
+    }
+    Eigen::MatrixXd K(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) K(i, j) = values[static_cast<size_t>(i) * cols + j];
+    }
+    return 0.5 * (K + K.transpose());
+}
+
+} // namespace
 std::unordered_set<std::string> load_snp_id_set(const std::string& path);
 
 GwasScanner::GwasScanner(const Options& opts) : options(opts) {
@@ -66,6 +112,18 @@ std::vector<std::string> sort_chrom_labels(const std::set<std::string>& chroms_s
     return chroms;
 }
 
+std::string lmm_stat_test_label(int mode) {
+    if (mode == 1) return "wald";
+    if (mode == 2) return "lrt";
+    if (mode == 3) return "score";
+    if (mode == 4) return "wald,lrt,score";
+    return "legacy_p";
+}
+
+std::string lmm_fallback_policy(const std::string& solver) {
+    return solver == "brent" ? "none" : "brent_if_idul_family_nonconvergent";
+}
+
 void GwasScanner::runLocoScan(
     const Eigen::VectorXd& y,
     const Eigen::MatrixXf& X,
@@ -83,12 +141,27 @@ void GwasScanner::runLocoScan(
     {
         std::ofstream meta(options.out_prefix + ".scan.meta.txt");
         meta << "Item\tValue\n"
+             << "release_version\t" << COSMICSCANNER_VERSION << "\n"
+             << "git_commit\t" << COSMICSCANNER_GIT_COMMIT << "\n"
+             << "release_status\tstable\n"
              << "analysis_model\tunivariate_lmm\n"
+             << "model\tstandard_gaussian_lmm\n"
              << "requested_scan_tier\t" << (options.scan_tier.empty() ? "legacy_default" : options.scan_tier) << "\n"
              << "resolved_scan_tier\t" << resolved_tier << "\n"
+             << "scan_tier\t" << resolved_tier << "\n"
+             << "statistical_test\t" << lmm_stat_test_label(options.lmm_gemma_mode) << "\n"
+             << "null_solver\t" << options.lmm_null_solver_name << "\n"
+             << "loco\t" << (options.no_loco ? "disabled_no_loco" : "default_loco_when_multiple_chromosomes") << "\n"
+             << "fallback\t" << lmm_fallback_policy(options.lmm_null_solver_name) << "\n"
+             << "grm_scaling\t" << (options.k_file.empty() ? "default_internal_grm" : "external_k_file_no_rescaling") << "\n"
+             << "external_k_file\t" << (options.k_file.empty() ? "none" : options.k_file) << "\n"
+             << "multivariate_method\tNA\n"
              << "snp_vc_strategy\t" << vc_strategy << "\n";
     }
     std::cout << "Single-trait scan tier: " << resolved_tier << " (" << vc_strategy << ")\n";
+    if (!options.k_file.empty() && !options.no_loco) {
+        throw std::runtime_error("--k-file currently requires --no-loco");
+    }
     if (!is_bgen && !is_pgen && options.grm_alg != 2) {
         auto total_start = std::chrono::steady_clock::now();
         GrmBuilder::Options grm_opts;
@@ -109,7 +182,13 @@ void GwasScanner::runLocoScan(
         Eigen::MatrixXd G_global;
         double S_global = 0.0;
         GrmBuilder::SplitGrmResult split;
-        if (use_loco) {
+        if (!options.k_file.empty()) {
+            std::cout << "Using external K matrix for single-trait LMM: " << options.k_file << "\n";
+            auto grm_start = std::chrono::steady_clock::now();
+            G_global = load_external_k_matrix(options.k_file, static_cast<int>(y.size()));
+            S_global = 0.0;
+            log_stage_time("external K load", grm_start);
+        } else if (use_loco) {
             std::cout << "Calculating Global + per-chromosome GRMs in one PLINK pass...\n";
             auto grm_start = std::chrono::steady_clock::now();
             GrmBuilder split_builder(grm_opts);
@@ -130,7 +209,7 @@ void GwasScanner::runLocoScan(
             G_global = global_builder.getGrm();
             log_stage_time("PLINK global GRM build", grm_start);
         }
-        std::cout << "Global GRM computed. Scaling Factor = " << S_global << std::endl;
+        std::cout << "Global GRM ready. Scaling Factor = " << S_global << std::endl;
 
         std::string out_file = options.out_prefix + ".assoc.txt";
         writeHeader(out_file);
@@ -268,7 +347,11 @@ void GwasScanner::runLocoScan(
     GrmBuilder::SplitGrmResult split_result;
     const bool use_loco = chroms_set.size() > 1 && !options.no_loco;
 
-    if (is_bgen && use_loco) {
+    if (!options.k_file.empty()) {
+        std::cout << "Using external K matrix for single-trait LMM: " << options.k_file << "\n";
+        G_global_norm = load_external_k_matrix(options.k_file, static_cast<int>(y.size()));
+        S_global = 0.0;
+    } else if (is_bgen && use_loco) {
         GrmBuilder split_builder(grm_opts);
         bgen_reader.reset();
         split_result = split_builder.computeSplit(bgen_reader, chroms_set);

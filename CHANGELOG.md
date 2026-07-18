@@ -6,6 +6,19 @@
 - `1.0.0` and `1.0.5` below are retrospective internal milestones inferred from
   Git history, not earlier public releases or Git tags.
 
+## v1.1.3 (2026-07-17)
+
+- 冻结 focused release 支持模式矩阵，区分 Stable、Experimental、Internal 和
+  Unsupported。
+- `--help` 现在列出 scan tier、association test、null-model solver、
+  multivariate method、repeatability mode 和 LOCO 的合法值、默认值与作用范围。
+- Hybrid 和 GxE 多性状入口在 focused release 中明确标记为 unsupported，并在参数解析
+  阶段报错。
+- `.scan.meta.txt` 增加 model、scan tier、statistical test、null solver、
+  LOCO/no-LOCO、fallback policy、multivariate method、release version、
+  Git commit 和 release status 字段。
+- README、USER_MANUAL 和 release validation 示例与实际 CLI 对齐。
+
 ## v1.1.2 (2026-07-15)
 
 - 增加 Linux、macOS 和 Windows UCRT64 的 GitHub Actions 构建与回归测试。

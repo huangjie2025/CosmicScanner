@@ -1,4 +1,5 @@
 #include "eigen_vce.h"
+#include "mv_reml_dense.h"
 #include "vce.h" // For VCESolver::solveDiagonal
 #include <iostream>
 #include <stdexcept>
@@ -10,6 +11,30 @@
 #include <unsupported/Eigen/KroneckerProduct>
 
 namespace cosmic {
+
+static std::vector<double> pack_spd_cholesky(const Eigen::MatrixXd& M) {
+    Eigen::LLT<Eigen::MatrixXd> llt(M + 1e-10 * Eigen::MatrixXd::Identity(M.rows(), M.cols()));
+    Eigen::MatrixXd L = llt.matrixL();
+    std::vector<double> out;
+    out.reserve(M.rows() * (M.rows() + 1) / 2);
+    for (int i = 0; i < M.rows(); ++i) {
+        for (int j = 0; j <= i; ++j) {
+            out.push_back(i == j ? std::log(std::max(L(i, j), 1e-12)) : L(i, j));
+        }
+    }
+    return out;
+}
+
+static Eigen::MatrixXd unpack_spd_cholesky(const std::vector<double>& x, int offset, int d) {
+    Eigen::MatrixXd L = Eigen::MatrixXd::Zero(d, d);
+    int k = offset;
+    for (int i = 0; i < d; ++i) {
+        for (int j = 0; j <= i; ++j, ++k) {
+            L(i, j) = (i == j) ? std::exp(x[k]) : x[k];
+        }
+    }
+    return L * L.transpose();
+}
 
 // --- EigenVce (Single Trait) ---
 
@@ -392,6 +417,15 @@ void MvEigenVce::prepare(const Eigen::MatrixXd& Y, const Eigen::MatrixXd& X, con
     B = Eigen::MatrixXd::Zero(n_covars, n_traits);
 }
 
+void MvEigenVce::setInitialComponents(const Eigen::MatrixXd& Vg_init, const Eigen::MatrixXd& Ve_init) {
+    if (Vg_init.rows() != n_traits || Vg_init.cols() != n_traits ||
+        Ve_init.rows() != n_traits || Ve_init.cols() != n_traits) {
+        throw std::runtime_error("MvEigenVce::setInitialComponents: dimension mismatch");
+    }
+    Vg = 0.5 * (Vg_init + Vg_init.transpose());
+    Ve = 0.5 * (Ve_init + Ve_init.transpose());
+}
+
 void MvEigenVce::updateEM(Eigen::MatrixXd& Vg_new, Eigen::MatrixXd& Ve_new) {
     Eigen::MatrixXd S_g = Eigen::MatrixXd::Zero(n_traits, n_traits);
     Eigen::MatrixXd S_e = Eigen::MatrixXd::Zero(n_traits, n_traits);
@@ -399,25 +433,49 @@ void MvEigenVce::updateEM(Eigen::MatrixXd& Vg_new, Eigen::MatrixXd& Ve_new) {
     int pd = n_covars * n_traits;
     Eigen::MatrixXd LHS_B = Eigen::MatrixXd::Zero(pd, pd);
     Eigen::VectorXd RHS_B = Eigen::VectorXd::Zero(pd);
+    std::vector<Eigen::MatrixXd> Vinv(n_samples);
+    std::vector<Eigen::VectorXd> yrot(n_samples);
+    std::vector<Eigen::VectorXd> xrot(n_samples);
     
     for (int i = 0; i < n_samples; ++i) {
         Eigen::MatrixXd V_i = Vg * D[i] + Ve;
         Eigen::MatrixXd V_i_inv = V_i.inverse();
+        Vinv[i] = V_i_inv;
         
         Eigen::VectorXd y_i = Uty.row(i).transpose();
+        yrot[i] = y_i;
         Eigen::VectorXd x_i;
         if (n_covars > 0) x_i = UtX.row(i).transpose();
+        xrot[i] = x_i;
         
-        Eigen::VectorXd resid_i = y_i;
         if (n_covars > 0) {
-            resid_i -= B.transpose() * x_i;
-            
             Eigen::MatrixXd X_i_kron = Eigen::kroneckerProduct(x_i.transpose(), Eigen::MatrixXd::Identity(n_traits, n_traits));
             LHS_B += X_i_kron.transpose() * V_i_inv * X_i_kron;
             RHS_B += X_i_kron.transpose() * V_i_inv * y_i;
         }
-        
-        Eigen::MatrixXd P_i = V_i_inv; 
+    }
+
+    Eigen::MatrixXd beta_cov;
+    if (n_covars > 0) {
+        Eigen::LDLT<Eigen::MatrixXd> beta_ldlt(LHS_B);
+        Eigen::VectorXd b_vec = beta_ldlt.solve(RHS_B);
+        beta_cov = beta_ldlt.solve(Eigen::MatrixXd::Identity(pd, pd));
+        for (int c = 0; c < n_covars; ++c) {
+            for (int t = 0; t < n_traits; ++t) {
+                B(c, t) = b_vec(c * n_traits + t);
+            }
+        }
+    }
+
+    for (int i = 0; i < n_samples; ++i) {
+        Eigen::VectorXd resid_i = yrot[i];
+        Eigen::VectorXd x_i;
+        if (n_covars > 0) {
+            x_i = xrot[i];
+            resid_i -= B.transpose() * x_i;
+        }
+
+        Eigen::MatrixXd P_i = Vinv[i];
         
         Eigen::MatrixXd W_g_i = Vg * D[i] * P_i;
         Eigen::VectorXd u_hat_i = W_g_i * resid_i;
@@ -432,19 +490,19 @@ void MvEigenVce::updateEM(Eigen::MatrixXd& Vg_new, Eigen::MatrixXd& Ve_new) {
         Eigen::VectorXd e_hat_i = W_e_i * resid_i;
         
         S_e += e_hat_i * e_hat_i.transpose() + Ve - W_e_i * Ve;
-    }
-    
-    Vg_new = S_g / n_samples;
-    Ve_new = S_e / n_samples;
-    
-    if (n_covars > 0) {
-        Eigen::VectorXd b_vec = LHS_B.ldlt().solve(RHS_B);
-        for (int c = 0; c < n_covars; ++c) {
-            for (int t = 0; t < n_traits; ++t) {
-                B(c, t) = b_vec(c * n_traits + t);
+
+        if (options.use_reml_correction && n_covars > 0) {
+            Eigen::MatrixXd X_i_kron = Eigen::kroneckerProduct(x_i.transpose(), Eigen::MatrixXd::Identity(n_traits, n_traits));
+            Eigen::MatrixXd beta_unc = X_i_kron * beta_cov * X_i_kron.transpose();
+            if (D[i] > 1e-12) {
+                S_g += W_g_i * beta_unc * W_g_i.transpose() / D[i];
             }
+            S_e += W_e_i * beta_unc * W_e_i.transpose();
         }
     }
+
+    Vg_new = S_g / n_samples;
+    Ve_new = S_e / n_samples;
 }
 
 bool MvEigenVce::isPositiveDefinite(const Eigen::MatrixXd& M) const {
@@ -847,6 +905,125 @@ bool MvEigenVce::runEmmvgwasLambdaNullModel() {
     return false;
 }
 
+bool MvEigenVce::runDenseRemlRefinement() {
+    if (n_samples <= 0 || n_traits <= 0) {
+        return false;
+    }
+
+    std::vector<double> x = pack_spd_cholesky(Vg);
+    std::vector<double> ve_x = pack_spd_cholesky(Ve);
+    x.insert(x.end(), ve_x.begin(), ve_x.end());
+
+    const int d = n_traits;
+    const int block_size = d * (d + 1) / 2;
+    const int npar = static_cast<int>(x.size());
+
+    auto objective = [&](const std::vector<double>& params, Eigen::MatrixXd* Vg_out, Eigen::MatrixXd* Ve_out) {
+        Eigen::MatrixXd Vg_try = unpack_spd_cholesky(params, 0, d);
+        Eigen::MatrixXd Ve_try = unpack_spd_cholesky(params, block_size, d);
+        MvRemlEval eval = mv_eval_reml_dense(Uty, UtX, D, Vg_try, Ve_try);
+        if (Vg_out) *Vg_out = Vg_try;
+        if (Ve_out) *Ve_out = Ve_try;
+        if (!std::isfinite(eval.loglik)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        return -eval.loglik;
+    };
+
+    auto gradient = [&](const std::vector<double>& params) {
+        Eigen::VectorXd g(npar);
+        for (int k = 0; k < npar; ++k) {
+            const double h = 1e-5 * std::max(1.0, std::abs(params[k]));
+            std::vector<double> xp = params;
+            std::vector<double> xm = params;
+            xp[k] += h;
+            xm[k] -= h;
+            const double fp = objective(xp, nullptr, nullptr);
+            const double fm = objective(xm, nullptr, nullptr);
+            if (std::isfinite(fp) && std::isfinite(fm)) {
+                g(k) = (fp - fm) / (2.0 * h);
+            } else {
+                g(k) = 0.0;
+            }
+        }
+        return g;
+    };
+
+    double f = objective(x, nullptr, nullptr);
+    if (!std::isfinite(f)) return false;
+    Eigen::VectorXd g = gradient(x);
+    Eigen::MatrixXd Hinv = Eigen::MatrixXd::Identity(npar, npar);
+
+    const int max_refine_iter = std::max(20, std::min(200, options.max_iter));
+    double step_norm = std::numeric_limits<double>::infinity();
+    int iter = 0;
+    for (; iter < max_refine_iter; ++iter) {
+        if (g.norm() < std::max(1e-6, options.tol)) break;
+
+        Eigen::VectorXd direction = -Hinv * g;
+        if (direction.dot(g) >= 0.0 || !direction.allFinite()) {
+            direction = -g;
+            Hinv.setIdentity();
+        }
+
+        double alpha = 1.0;
+        std::vector<double> x_new(npar);
+        double f_new = std::numeric_limits<double>::infinity();
+        const double descent = g.dot(direction);
+        for (int ls = 0; ls < 30; ++ls) {
+            for (int k = 0; k < npar; ++k) x_new[k] = x[k] + alpha * direction(k);
+            f_new = objective(x_new, nullptr, nullptr);
+            if (std::isfinite(f_new) && f_new <= f + 1e-4 * alpha * descent) {
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if (!std::isfinite(f_new) || f_new > f) break;
+
+        Eigen::VectorXd g_new = gradient(x_new);
+        Eigen::VectorXd s(npar);
+        for (int k = 0; k < npar; ++k) s(k) = x_new[k] - x[k];
+        Eigen::VectorXd y = g_new - g;
+        const double ys = y.dot(s);
+        if (ys > 1e-12 && y.allFinite() && s.allFinite()) {
+            const double rho = 1.0 / ys;
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(npar, npar);
+            Hinv = (I - rho * s * y.transpose()) * Hinv * (I - rho * y * s.transpose()) +
+                   rho * s * s.transpose();
+        } else {
+            Hinv.setIdentity();
+        }
+
+        step_norm = s.norm();
+        x = x_new;
+        f = f_new;
+        g = g_new;
+        if (step_norm < options.tol * std::max(1.0, Eigen::Map<Eigen::VectorXd>(x.data(), npar).norm())) {
+            ++iter;
+            break;
+        }
+    }
+
+    Eigen::MatrixXd Vg_refined, Ve_refined;
+    double final_obj = objective(x, &Vg_refined, &Ve_refined);
+    if (!std::isfinite(final_obj)) return false;
+
+    Vg = 0.5 * (Vg_refined + Vg_refined.transpose());
+    Ve = 0.5 * (Ve_refined + Ve_refined.transpose());
+    MvRemlEval final_eval = mv_eval_reml_dense(Uty, UtX, D, Vg, Ve);
+    if (final_eval.beta.size() == n_covars * n_traits) {
+        for (int c = 0; c < n_covars; ++c) {
+            for (int t = 0; t < n_traits; ++t) {
+                B(c, t) = final_eval.beta(c * n_traits + t);
+            }
+        }
+    }
+    last_iterations += iter;
+    last_update_norm = std::isfinite(step_norm) ? step_norm : 0.0;
+    last_loglik = final_eval.loglik;
+    return std::isfinite(final_eval.loglik);
+}
+
 void MvEigenVce::setEmmvgwasFixedComponents(const Eigen::MatrixXd& G_component,
                                             const Eigen::MatrixXd& R_component) {
     if (G_component.rows() != n_traits || G_component.cols() != n_traits ||
@@ -894,6 +1071,9 @@ bool MvEigenVce::runNullModel() {
         
         Vg = Vg_new;
         Ve = Ve_new;
+        last_iterations = iter + 1;
+        last_update_norm = err;
+        last_loglik = calcLogLikelihood();
         
         if (err < options.tol) {
             if (options.verbose) {
@@ -901,11 +1081,17 @@ bool MvEigenVce::runNullModel() {
                 std::cout << "  Vg:" << std::endl << Vg << std::endl;
                 std::cout << "  Ve:" << std::endl << Ve << std::endl;
             }
+            if (options.use_dense_reml_refinement) {
+                return runDenseRemlRefinement();
+            }
             return true;
         }
     }
     
     if (options.verbose) std::cout << "MvEigenVce: Warning: EM did not converge within " << options.max_iter << " iterations." << std::endl;
+    if (options.use_dense_reml_refinement) {
+        return runDenseRemlRefinement();
+    }
     return false;
 }
 

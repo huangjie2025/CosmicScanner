@@ -25,6 +25,29 @@
 
 namespace {
 
+const char* kScanTierValues = "approx, semi, exact";
+const char* kLmmGemmaModeValues = "1=Wald, 2=LRT, 3=Score, 4=all";
+const char* kNullSolverValues = "brent, idul, idul_plus (or idul+), aidul";
+const char* kMvMethodValues = "wald, emmv, gemma, gemma-compat, gemma-full, gemma-exact-full, eb";
+const char* kRepeatabilityModeValues = "auto, exact, fast, stcg";
+
+bool is_int_mode(int mode) {
+    return mode >= 1 && mode <= 4;
+}
+
+bool is_supported_mv_method(const std::string& method) {
+    return method == "wald" || method == "emmv" || method == "gemma"
+        || method == "gemma-compat" || method == "gemma-default"
+        || method == "gemma-full" || method == "gemma-exact"
+        || method == "gemma-exact-full" || method == "eb"
+        || method == "eb-lmm" || method == "lmm-eb";
+}
+
+bool is_unavailable_mv_method(const std::string& method) {
+    return method == "hybrid" || method == "gemma-gxe" || method == "gxe"
+        || method == "gemma-gxe-full" || method == "gxe-full";
+}
+
 double peak_memory_mb() {
 #ifdef _WIN32
     PROCESS_MEMORY_COUNTERS counters{};
@@ -65,17 +88,33 @@ void print_usage(const char* prog) {
               << "  --covar <file>               Categorical covariates\n"
               << "  --out <prefix>               Output prefix\n\n"
               << "Single-trait GWAS:\n"
-              << "  --gwas --scan-tier approx|semi|exact [--no-loco]\n"
-              << "  --lm <1|2|3|4>               Linear model Wald/LRT/Score/all\n"
-              << "  --lmm-gemma-mode <1|2|3|4>   LMM Wald/LRT/Score/all\n\n"
+              << "  --gwas --scan-tier <tier>     LMM scan tier. Values: " << kScanTierValues << "\n"
+              << "                                Default: approx when omitted\n"
+              << "                                approx=fixed-null; semi=fixed-ratio profile scale;\n"
+              << "                                exact=per-SNP variance-component refit\n"
+              << "  --lm <mode>                   Linear model test. Values: " << kLmmGemmaModeValues << "\n"
+              << "  --lmm-gemma-mode <mode>       LMM primary/output P. Values: " << kLmmGemmaModeValues << "\n"
+              << "                                Default: 0 legacy P column; mode 4 emits P_WALD/P_LRT/P_SCORE\n"
+              << "  --lmm-null-solver <solver>    Null-model solver only. Values: " << kNullSolverValues << "\n"
+              << "                                Default: brent. IDUL-family solvers fall back to brent if needed.\n"
+              << "  --k-file <file>               External dense K for single-trait LMM; requires --no-loco\n\n"
               << "Multivariate GWAS:\n"
-              << "  --multivariate --mpheno-list 1,2[,3...] --scan-tier approx|semi|exact\n\n"
+              << "  --multivariate --mpheno-list 1,2[,3...] --mv-method <method>\n"
+              << "  --mv-method <method>          Values: " << kMvMethodValues << "\n"
+              << "                                Default: emmv. gemma-exact is accepted as an internal alias.\n"
+              << "  --scan-tier <tier>            Shortcut: approx->wald, semi->emmv, exact->gemma-exact\n"
+              << "                                Multivariate exact currently requires --no-loco.\n"
+              << "                                Hybrid and GxE are unavailable in this focused release.\n\n"
               << "Repeatability GWAS:\n"
               << "  --repeatability-model --tpheno <time_col> --mpheno <trait_col>\n"
-              << "  --repeatability-mode exact --scan-tier approx|semi|exact\n"
-              << "  --repeatability-mode fast|stcg\n\n"
+              << "  --repeatability-mode <mode>   Values: " << kRepeatabilityModeValues << "; default: auto\n"
+              << "  --repeatability-mode exact --scan-tier <tier>  Values: " << kScanTierValues << "\n"
+              << "  --repeatability-mode fast|stcg                 Matrix-accelerated repeatability scans\n\n"
               << "A/G/H matrices:\n"
               << "  --make-agh --ped <file> [--genotyped-list <file>]\n\n"
+              << "LOCO:\n"
+              << "  Default: use LOCO GRMs when multiple chromosomes are present.\n"
+              << "  --no-loco                    Use one global GRM for all scanned SNPs.\n\n"
               << "Common filters:\n"
               << "  --maf <x> --hwe <x> --extract <file> --exclude <file>\n"
                << "  --chr <chr> --from-bp <bp> --to-bp <bp> --threads <n>\n";
@@ -115,19 +154,55 @@ int main(int argc, char** argv) {
             else if (a == "--scan-tier") {
                 cfg.scan_tier = need("--scan-tier");
                 if (cfg.scan_tier != "approx" && cfg.scan_tier != "semi" && cfg.scan_tier != "exact")
-                    throw std::runtime_error("--scan-tier must be approx, semi, or exact");
+                    throw std::runtime_error(std::string("--scan-tier must be one of: ") + kScanTierValues);
             }
             else if (a == "--no-loco") cfg.no_loco = true;
             else if (a == "--fast-lmm") cfg.fast_lmm = true;
-            else if (a == "--lm" || a == "-lm" || a == "--lm-mode") { cfg.linear_model = true; cfg.linear_model_mode = std::stoi(need(a.c_str())); }
-            else if (a == "--lmm-gemma-mode" || a == "-lmm") cfg.lmm_gemma_mode = std::stoi(need(a.c_str()));
+            else if (a == "--lm" || a == "-lm" || a == "--lm-mode") {
+                cfg.linear_model = true;
+                cfg.linear_model_mode = std::stoi(need(a.c_str()));
+                if (!is_int_mode(cfg.linear_model_mode)) {
+                    throw std::runtime_error(std::string("--lm must be one of: ") + kLmmGemmaModeValues);
+                }
+            }
+            else if (a == "--lmm-gemma-mode" || a == "-lmm") {
+                cfg.lmm_gemma_mode = std::stoi(need(a.c_str()));
+                if (!is_int_mode(cfg.lmm_gemma_mode)) {
+                    throw std::runtime_error(std::string("--lmm-gemma-mode must be one of: ") + kLmmGemmaModeValues);
+                }
+            }
             else if (a == "--lmm-gemma-refit") cfg.lmm_gemma_refit = true;
             else if (a == "--multivariate") cfg.multivariate = true;
-            else if (a == "--mv-method") { cfg.multivariate_method = need("--mv-method"); cfg.multivariate_method_explicit = true; }
+            else if (a == "--mv-method") {
+                cfg.multivariate_method = need("--mv-method");
+                cfg.multivariate_method_explicit = true;
+                if (is_unavailable_mv_method(cfg.multivariate_method)) {
+                    throw std::runtime_error("--mv-method " + cfg.multivariate_method
+                        + " is unavailable in this focused release. Supported values: " + kMvMethodValues);
+                }
+                if (!is_supported_mv_method(cfg.multivariate_method)) {
+                    throw std::runtime_error("Unknown --mv-method: " + cfg.multivariate_method
+                        + ". Supported values: " + kMvMethodValues);
+                }
+            }
             else if (a == "--mv-output-vbeta") cfg.multivariate_output_vbeta = true;
+            else if (a == "--mv-null-only") { cfg.multivariate = true; cfg.multivariate_null_only = true; cfg.run_gwas = true; }
+            else if (a == "--mv-gemma-force-iterations") cfg.multivariate_gemma_force_iterations = std::stoi(need("--mv-gemma-force-iterations"));
+            else if (a == "--k-file") cfg.k_file = need("--k-file");
+            else if (a == "--mv-k-file") cfg.multivariate_k_file = need("--mv-k-file");
+            else if (a == "--mv-compare-vg") cfg.multivariate_compare_vg = need("--mv-compare-vg");
+            else if (a == "--mv-compare-ve") cfg.multivariate_compare_ve = need("--mv-compare-ve");
+            else if (a == "--mv-init-vg") cfg.multivariate_init_vg = need("--mv-init-vg");
+            else if (a == "--mv-init-ve") cfg.multivariate_init_ve = need("--mv-init-ve");
             else if (a == "--emmvgwas") { cfg.multivariate = true; cfg.multivariate_method = "emmv"; cfg.multivariate_compatible = "emmvgwas"; cfg.no_loco = true; }
             else if (a == "--repeatability-model") cfg.repeatability_model = true;
-            else if (a == "--repeatability-mode") cfg.repeatability_mode = need("--repeatability-mode");
+            else if (a == "--repeatability-mode") {
+                cfg.repeatability_mode = need("--repeatability-mode");
+                if (cfg.repeatability_mode != "auto" && cfg.repeatability_mode != "exact"
+                    && cfg.repeatability_mode != "fast" && cfg.repeatability_mode != "stcg") {
+                    throw std::runtime_error(std::string("--repeatability-mode must be one of: ") + kRepeatabilityModeValues);
+                }
+            }
             else if (a == "--repeatability-grm-cache") cfg.repeatability_grm_cache_prefix = need("--repeatability-grm-cache");
             else if (a == "--repeatability-weight") cfg.repeatability_weight_file = need("--repeatability-weight");
             else if (a == "--repeatability-refit-limit") cfg.repeatability_refit_limit = std::stoi(need("--repeatability-refit-limit"));
@@ -145,7 +220,14 @@ int main(int argc, char** argv) {
             else if (a == "--from-bp") cfg.scan_from_bp = std::stoll(need("--from-bp"));
             else if (a == "--to-bp") cfg.scan_to_bp = std::stoll(need("--to-bp"));
             else if (a == "--threads") cfg.num_threads = std::stoi(need("--threads"));
-            else if (a == "--lmm-null-solver") cfg.lmm_null_solver = need("--lmm-null-solver");
+            else if (a == "--lmm-null-solver") {
+                cfg.lmm_null_solver = need("--lmm-null-solver");
+                if (cfg.lmm_null_solver != "brent" && cfg.lmm_null_solver != "idul"
+                    && cfg.lmm_null_solver != "idul_plus" && cfg.lmm_null_solver != "idul+"
+                    && cfg.lmm_null_solver != "aidul") {
+                    throw std::runtime_error(std::string("--lmm-null-solver must be one of: ") + kNullSolverValues);
+                }
+            }
             else if (a == "--reml-maxit") cfg.reml_maxit = std::stoi(need("--reml-maxit"));
             else if (a == "--reml-tol") cfg.reml_tol = std::stod(need("--reml-tol"));
             else throw std::runtime_error("Unsupported option in focused source build: " + a);
