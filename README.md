@@ -1,5 +1,7 @@
 # CosmicScanner v1.0.0
 
+Part of the [PanOmics software ecosystem](https://github.com/huangjie2025/PanOmics).
+
 CosmicScanner 是 PanOmics 基因组分析套件的全基因组关联分析（GWAS）模块。它专为大规模生物样本库设计，支持高性能并行计算和现代基因组数据格式。
 
 详细使用说明请参阅：**[中文教程](docs/Tutorial_CN.md)** | **[English Tutorial](docs/Tutorial_EN.md)**
