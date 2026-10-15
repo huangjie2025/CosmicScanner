@@ -1,0 +1,47 @@
+name: Native macOS acceptance packages
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/macos-acceptance-20261015]
+permissions:
+  contents: read
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The build-kit includes libCosmicCore sources; no private submodule checkout.
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: brew install cmake eigen libomp
+      - name: Build, verify and package
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/cosmicscanner"
+          python3 scripts/build_macos_package.py --work "$RUNNER_TEMP/cosmicscanner" --eigen "$(brew --prefix eigen)/include/eigen3" --libomp-prefix "$(brew --prefix libomp)" 2>&1 | tee "$RUNNER_TEMP/cosmicscanner/build.log"
+      - name: Upload acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: CosmicScanner-macos-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/cosmicscanner/artifacts/*.*
+            ${{ runner.temp }}/cosmicscanner/build.log
+            ${{ runner.temp }}/cosmicscanner/cli-checks/**
+            ${{ runner.temp }}/cosmicscanner/review-checks/**
+            ${{ runner.temp }}/cosmicscanner/cosmicscanner-native-demo-*/**
+          if-no-files-found: error

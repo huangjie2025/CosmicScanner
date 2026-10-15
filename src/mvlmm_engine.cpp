@@ -1,6 +1,8 @@
 #include "mvlmm_engine.h"
+#include "mvlmm_numerics.h"
 #include "pgen_reader.h"
 #include "bgen_reader.h"
+#include <atomic>
 #include <iostream>
 #include <cmath>
 #include <omp.h>
@@ -279,6 +281,10 @@ void MvLmmEngine::processBlock(const Eigen::MatrixXd& S_block,
         }
     }
 
+    std::atomic<int> numerical_roundoff_count{0};
+    std::atomic<int> boundary_solution_count{0};
+    std::atomic<int> true_singularity_count{0};
+
     // Finalize per SNP (independent)
     #pragma omp parallel for
     for (long long k = 0; k < (long long)current_block_size; ++k) {
@@ -307,29 +313,26 @@ void MvLmmEngine::processBlock(const Eigen::MatrixXd& S_block,
             Schur_inv = Schur.inverse();
             if (!Schur_inv.allFinite()) continue;
         } else {
-            Schur = sanitize_spd_local(Schur, 1e-8);
-            if (!invert_spd_jitter_local(Schur, Schur_inv)) continue;
+            double min_information_eigenvalue = std::numeric_limits<double>::quiet_NaN();
+            const auto status = mvlmm_numerics::invertInformation(Schur, Schur_inv, min_information_eigenvalue);
+            if (status != mvlmm_numerics::MatrixStatus::OK) {
+                ++true_singularity_count;
+                continue;
+            }
+            Schur = 0.5 * (Schur + Schur.transpose());
         }
         Eigen::VectorXd beta = Schur_inv * adjusted_RHS;
         if (!beta.allFinite()) continue;
 
         double wald_stat;
-        if (options.em_mvgwas_test) {
+        if (options.em_mvgwas_test && options.use_general_sigma_inverse) {
             Eigen::MatrixXd Crr = Cyy_null - beta * adjusted_RHS.transpose();
             double df = std::max(1.0, (double)(n_samples - n_covars - 1));
             Eigen::MatrixXd ee = Crr / df;
             Var_beta = Schur_inv * ee;
-            Eigen::MatrixXd Var_beta_inv;
-            if (options.use_general_sigma_inverse) {
-                Var_beta_inv = Var_beta.inverse();
-                if (!Var_beta_inv.allFinite()) continue;
-                wald_stat = beta.transpose() * Var_beta_inv * beta;
-            } else {
-                // To compute wald_stat, we need Var_beta^-1 = ee^-1 * Schur.
-                Eigen::MatrixXd ee_inv;
-                if (!invert_spd_jitter_local(ee, ee_inv)) continue;
-                wald_stat = beta.transpose() * ee_inv * Schur * beta;
-            }
+            Eigen::MatrixXd Var_beta_inv = Var_beta.inverse();
+            if (!Var_beta_inv.allFinite()) continue;
+            wald_stat = beta.transpose() * Var_beta_inv * beta;
         } else {
             Var_beta = Schur_inv;
             wald_stat = beta.transpose() * Schur * beta;
@@ -345,6 +348,15 @@ void MvLmmEngine::processBlock(const Eigen::MatrixXd& S_block,
             wald_stat = eb.wald;
             p_val = eb.p;
         }
+
+        double min_covariance_eigenvalue = std::numeric_limits<double>::quiet_NaN();
+        const auto covariance_status = mvlmm_numerics::conditionCovariance(Var_beta, min_covariance_eigenvalue);
+        if (covariance_status == mvlmm_numerics::MatrixStatus::TRUE_SINGULARITY) {
+            ++true_singularity_count;
+            continue;
+        }
+        if (covariance_status == mvlmm_numerics::MatrixStatus::NUMERICAL_ROUNDOFF) ++numerical_roundoff_count;
+        if (covariance_status == mvlmm_numerics::MatrixStatus::BOUNDARY_SOLUTION) ++boundary_solution_count;
 
         MvGwasResult res;
         if (!bim.empty()) {
@@ -373,6 +385,11 @@ void MvLmmEngine::processBlock(const Eigen::MatrixXd& S_block,
         }
 
         results[global_idx] = res;
+    }
+    if (numerical_roundoff_count || boundary_solution_count || true_singularity_count) {
+        std::cerr << "mvLMM covariance diagnostics: NUMERICAL_ROUNDOFF=" << numerical_roundoff_count
+                  << " BOUNDARY_SOLUTION=" << boundary_solution_count
+                  << " TRUE_SINGULARITY=" << true_singularity_count << '\n';
     }
 }
 

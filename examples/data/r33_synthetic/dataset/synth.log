@@ -1,0 +1,27 @@
+PLINK v2.0.0-a.6.9LM 64-bit Intel (29 Jan 2025)
+Options in effect:
+  --bfile /disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth
+  --export bgen-1.2
+  --out /disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth
+
+Hostname: cpu-node05
+Working directory: /disk228/huangjie/PanOmics/CosmicScanner
+Start time: Mon Oct 12 09:53:59 2026
+
+Random number seed: 1791770039
+1031106 MiB RAM detected, ~827027 available; reserving 515553 MiB for main
+workspace.
+Using up to 128 threads (change this with --threads).
+60 samples (30 females, 30 males; 60 founders) loaded from
+/disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth.fam.
+180 variants loaded from
+/disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth.bim.
+Note: No phenotype data present.
+Writing
+/disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth.bgen
+... done.
+Writing
+/disk228/huangjie/PanOmics/CosmicScanner/examples/data/r33_synthetic/dataset/synth.sample
+... done.
+
+End time: Mon Oct 12 09:53:59 2026

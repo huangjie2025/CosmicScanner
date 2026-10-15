@@ -1,14 +1,20 @@
 #include "lmm_engine.h"
 #include "vce.h"
 #include "matrix_free_pcg.h"
+#include "matrix_free_vce.h"
 #include "qc_utils.h"
+#include "sparse_grm_reader.h"
+#include "vcf/vcf_reader.h"
 #include <iostream>
 #include <cmath>
 #include <omp.h>
 #include <stdexcept>
 #include <map>
 #include <limits>
+#include <chrono>
+#include <random>
 #include "rng.h"
+#include "genetics/genotype_encoding.h"
 
 namespace cosmic {
 
@@ -666,7 +672,7 @@ void LmmEngine::scanBiobank(BgenReader& reader,
     reader.multiply_Zt_v(x, scores);
 
     // Stop prefetch
-    reader.stopPrefetch();
+    reader.stopPrefetcher();
 
     const auto& vars = reader.getVariants();
     for(size_t i=0; i<m; ++i) {
@@ -708,6 +714,7 @@ LmmEngine::LmmEngine() {}
 LmmEngine::LmmEngine(const Options& opts) : options(opts) {}
 
 void LmmEngine::prepareFromVce(const EigenVce& vce) {
+    low_rank_mode = false;
     sigma2_g = vce.getSigma2g();
     sigma2_e = vce.getSigma2e();
     null_delta = vce.getDelta();
@@ -715,6 +722,385 @@ void LmmEngine::prepareFromVce(const EigenVce& vce) {
     W_proj = vce.getProjectedW();
     Uty = vce.getUty();
     UtX = vce.getUtX();
+}
+
+void LmmEngine::prepareFromMatrixFreeVce(const MatrixFreeVce& vce) {
+    low_rank_mode = true;
+    sigma2_g = vce.getSigma2g();
+    sigma2_e = vce.getSigma2e();
+    null_delta = vce.getDelta();
+    D = vce.getEigenvalues();
+    W_proj = vce.getProjectedW();
+    Uty = vce.getUty();
+    UtX = vce.getUtX();
+    low_rank_u = vce.getEigenvectors();
+    low_rank_residual_eigenvalue = vce.getResidualEigenvalue();
+}
+
+LmmEngine::LowRankDiagnostics LmmEngine::prepareLowRank(
+    const Eigen::VectorXd& y, const Eigen::MatrixXf& X,
+    const Eigen::MatrixXd& grm, int rank, int oversample, long long seed,
+    double trace_threshold, int min_rank) {
+    const auto start = std::chrono::steady_clock::now();
+    const int n = static_cast<int>(grm.rows());
+    const int requested_rank = rank;
+    if (grm.cols() != n || y.size() != n || X.rows() != n || rank <= 0 || rank >= n)
+        throw std::invalid_argument("Low-rank LMM requires a square GRM and 0 < rank < sample count");
+    const int sketch_size = std::min(n, rank + std::max(0, oversample));
+
+    std::mt19937_64 generator(static_cast<uint64_t>(seed));
+    std::normal_distribution<double> normal(0.0, 1.0);
+    Eigen::MatrixXd omega(n, sketch_size);
+    for (int j = 0; j < sketch_size; ++j)
+        for (int i = 0; i < n; ++i) omega(i, j) = normal(generator);
+    Eigen::MatrixXd sample = grm * omega;
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        Eigen::HouseholderQR<Eigen::MatrixXd> qr(sample);
+        Eigen::MatrixXd q = qr.householderQ() *
+            Eigen::MatrixXd::Identity(n, sketch_size);
+        sample.noalias() = grm * q;
+    }
+    Eigen::HouseholderQR<Eigen::MatrixXd> qr(sample);
+    Eigen::MatrixXd q = qr.householderQ() * Eigen::MatrixXd::Identity(n, sketch_size);
+    Eigen::MatrixXd small = q.transpose() * grm * q;
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(small);
+    if (eig.info() != Eigen::Success) throw std::runtime_error("Low-rank GRM eigensolver failed");
+    Eigen::VectorXd leading_eigenvalues(rank);
+    Eigen::MatrixXd leading_u(n, rank);
+    for (int j = 0; j < rank; ++j) {
+        const int source = sketch_size - 1 - j;
+        leading_eigenvalues[j] = std::max(0.0, eig.eigenvalues()[source]);
+        leading_u.col(j) = q * eig.eigenvectors().col(source);
+    }
+    const double total_trace = std::max(0.0, grm.trace());
+    int selected_rank = rank;
+    bool threshold_met = trace_threshold <= 0.0;
+    if (trace_threshold > 0.0 && total_trace > 0.0) {
+        double retained = 0.0;
+        const int first_allowed = std::min(rank, std::max(1, min_rank));
+        for (int j = 0; j < rank; ++j) {
+            retained += leading_eigenvalues[j];
+            if (j + 1 >= first_allowed && retained / total_trace >= trace_threshold) {
+                selected_rank = j + 1;
+                threshold_met = true;
+                break;
+            }
+        }
+    }
+    low_rank_u = leading_u.leftCols(selected_rank);
+    low_rank_eigenvalues = leading_eigenvalues.head(selected_rank);
+    rank = selected_rank;
+    low_rank_residual_eigenvalue = std::max(
+        0.0, (grm.trace() - low_rank_eigenvalues.sum()) / static_cast<double>(n - rank));
+    const double grm_norm = std::max(grm.norm(), std::numeric_limits<double>::min());
+    const double approximation_norm_sq = low_rank_eigenvalues.squaredNorm() +
+        (n - rank) * low_rank_residual_eigenvalue * low_rank_residual_eigenvalue;
+    const double cross_product = low_rank_residual_eigenvalue * grm.trace() +
+        ((low_rank_eigenvalues.array() - low_rank_residual_eigenvalue) *
+         low_rank_eigenvalues.array()).sum();
+    const double residual_norm_sq = std::max(
+        0.0, grm.squaredNorm() + approximation_norm_sq - 2.0 * cross_product);
+    const double relative_error = std::sqrt(residual_norm_sq) / grm_norm;
+
+    low_rank_y = y;
+    low_rank_x = X.cast<double>();
+    const int p = static_cast<int>(low_rank_x.cols());
+    const int df = n - p;
+    if (df <= 0) throw std::invalid_argument("Low-rank LMM has no residual degrees of freedom");
+
+    auto apply_ratio_inverse = [&](double eta, const Eigen::MatrixXd& rhs) {
+        const double base = 1.0 / (1.0 + eta * low_rank_residual_eigenvalue);
+        Eigen::VectorXd correction =
+            (1.0 / (1.0 + eta * low_rank_eigenvalues.array()) - base).matrix();
+        return (base * rhs + low_rank_u *
+                (correction.asDiagonal() * (low_rank_u.transpose() * rhs))).eval();
+    };
+    auto objective = [&](double log_eta, double* quadratic) {
+        const double eta = std::exp(log_eta);
+        Eigen::MatrixXd rinv_x = apply_ratio_inverse(eta, low_rank_x);
+        Eigen::MatrixXd information = low_rank_x.transpose() * rinv_x;
+        Eigen::LDLT<Eigen::MatrixXd> solver(information);
+        if (solver.info() != Eigen::Success || !solver.isPositive())
+            return std::numeric_limits<double>::infinity();
+        Eigen::VectorXd rinv_y = apply_ratio_inverse(eta, Eigen::MatrixXd(low_rank_y)).col(0);
+        Eigen::VectorXd beta = solver.solve(low_rank_x.transpose() * rinv_y);
+        Eigen::VectorXd residual = low_rank_y - low_rank_x * beta;
+        const double qf = residual.dot(
+            apply_ratio_inverse(eta, Eigen::MatrixXd(residual)).col(0));
+        if (!(qf > 0.0) || !std::isfinite(qf)) return std::numeric_limits<double>::infinity();
+        if (quadratic) *quadratic = qf;
+        const double logdet_r = (n - rank) *
+            std::log1p(eta * low_rank_residual_eigenvalue) +
+            (1.0 + eta * low_rank_eigenvalues.array()).log().sum();
+        const double logdet_x = solver.vectorD().array().abs().max(1e-300).log().sum();
+        return logdet_r + logdet_x + df * std::log(qf / static_cast<double>(df));
+    };
+
+    const int grid_size = 81;
+    int best_index = 0;
+    double best_log_eta = -12.0;
+    double best_objective = objective(best_log_eta, nullptr);
+    for (int i = 1; i < grid_size; ++i) {
+        const double candidate = -12.0 + 24.0 * i / static_cast<double>(grid_size - 1);
+        const double value = objective(candidate, nullptr);
+        if (value < best_objective) {
+            best_objective = value;
+            best_log_eta = candidate;
+            best_index = i;
+        }
+    }
+    double left = -12.0 + 24.0 * std::max(0, best_index - 1) /
+        static_cast<double>(grid_size - 1);
+    double right = -12.0 + 24.0 * std::min(grid_size - 1, best_index + 1) /
+        static_cast<double>(grid_size - 1);
+    const double golden = (std::sqrt(5.0) - 1.0) / 2.0;
+    double c = right - golden * (right - left);
+    double d = left + golden * (right - left);
+    double fc = objective(c, nullptr), fd = objective(d, nullptr);
+    for (int iteration = 0; iteration < 80 && right - left > 1e-8; ++iteration) {
+        if (fc < fd) {
+            right = d; d = c; fd = fc; c = right - golden * (right - left);
+            fc = objective(c, nullptr);
+        } else {
+            left = c; c = d; fc = fd; d = left + golden * (right - left);
+            fd = objective(d, nullptr);
+        }
+    }
+    best_log_eta = 0.5 * (left + right);
+    double quadratic = 0.0;
+    best_objective = objective(best_log_eta, &quadratic);
+    if (!std::isfinite(best_objective)) throw std::runtime_error("Low-rank REML optimization failed");
+    null_delta = std::exp(-best_log_eta);
+    sigma2_e = quadratic / static_cast<double>(df);
+    sigma2_g = std::exp(best_log_eta) * sigma2_e;
+    low_rank_mode = true;
+
+    LowRankDiagnostics diagnostics;
+    diagnostics.requested_rank = requested_rank;
+    diagnostics.effective_rank = rank;
+    diagnostics.sketch_size = sketch_size;
+    diagnostics.total_rank = n;
+    diagnostics.trace_fraction = total_trace > 0.0
+        ? low_rank_eigenvalues.sum() / total_trace : 0.0;
+    diagnostics.trace_threshold_met = threshold_met;
+    diagnostics.rank_selection = trace_threshold > 0.0 ? "AUTO_TRACE" : "FIXED";
+    diagnostics.residual_eigenvalue = low_rank_residual_eigenvalue;
+    diagnostics.relative_frobenius_error = relative_error;
+    diagnostics.decomposition_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - start).count();
+    diagnostics.estimated_peak_bytes = static_cast<long long>(sizeof(double)) *
+        (static_cast<long long>(n) * n + 2LL * n * sketch_size +
+         static_cast<long long>(n) * rank + static_cast<long long>(sketch_size) * sketch_size);
+    return diagnostics;
+}
+
+LmmEngine::LowRankDiagnostics LmmEngine::prepareLowRankMatrixFree(
+    const Eigen::VectorXd& y,
+    const Eigen::MatrixXf& X,
+    const KinshipOperator& kinship,
+    int rank, int oversample,
+    long long seed,
+    double trace_threshold,
+    int min_rank,
+    int n_threads) {
+
+    const auto start = std::chrono::steady_clock::now();
+    const int n = static_cast<int>(kinship.rows());
+    const int requested_rank = rank;
+
+    if (y.size() != n || X.rows() != n || rank <= 0 || rank >= n) {
+        throw std::invalid_argument("Low-rank LMM requires valid dimensions and 0 < rank < sample count");
+    }
+
+    const int sketch_size = std::min(n, rank + std::max(0, oversample));
+
+    std::mt19937_64 generator(static_cast<uint64_t>(seed));
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    // Step 1: Generate random test matrix Omega (n x sketch_size)
+    Eigen::MatrixXd omega(n, sketch_size);
+    for (int j = 0; j < sketch_size; ++j)
+        for (int i = 0; i < n; ++i) omega(i, j) = normal(generator);
+
+    // Step 2: Compute Y = K * Omega using matrix-free operator
+    // Y = K * Omega = KinshipOperator.apply(Omega)
+    Eigen::MatrixXd sample(n, sketch_size);
+    kinship.apply(omega, sample, n_threads);
+
+    // Power iterations for better accuracy
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        Eigen::HouseholderQR<Eigen::MatrixXd> qr(sample);
+        Eigen::MatrixXd q = qr.householderQ() *
+            Eigen::MatrixXd::Identity(n, sketch_size);
+        kinship.apply(q, sample, 1);
+    }
+
+    // Final QR to get orthonormal basis Q
+    Eigen::HouseholderQR<Eigen::MatrixXd> qr(sample);
+    Eigen::MatrixXd q = qr.householderQ() * Eigen::MatrixXd::Identity(n, sketch_size);
+
+    // Step 3: Compute small projected matrix B = Q^T * K * Q
+    // B = Q^T * K * Q
+    // First compute K * Q
+    Eigen::MatrixXd kq(n, sketch_size);
+    kinship.apply(q, kq, 1);
+
+    // Then B = Q^T * (K * Q)
+    Eigen::MatrixXd small = q.transpose() * kq;
+
+    // Step 4: Eigendecomposition of small matrix
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(small);
+    if (eig.info() != Eigen::Success) throw std::runtime_error("Low-rank GRM eigensolver failed");
+
+    Eigen::VectorXd leading_eigenvalues(rank);
+    Eigen::MatrixXd leading_u(n, rank);
+    for (int j = 0; j < rank; ++j) {
+        const int source = sketch_size - 1 - j;
+        leading_eigenvalues[j] = std::max(0.0, eig.eigenvalues()[source]);
+        leading_u.col(j) = q * eig.eigenvectors().col(source);
+    }
+
+    // Trace and rank selection (same as original)
+    const double total_trace = kinship.trace();
+    int selected_rank = rank;
+    bool threshold_met = trace_threshold <= 0.0;
+    if (trace_threshold > 0.0 && total_trace > 0.0) {
+        double retained = 0.0;
+        const int first_allowed = std::min(rank, std::max(1, min_rank));
+        for (int j = 0; j < rank; ++j) {
+            retained += leading_eigenvalues[j];
+            if (j + 1 >= first_allowed && retained / total_trace >= trace_threshold) {
+                selected_rank = j + 1;
+                threshold_met = true;
+                break;
+            }
+        }
+    }
+
+    low_rank_u = leading_u.leftCols(selected_rank);
+    low_rank_eigenvalues = leading_eigenvalues.head(selected_rank);
+    rank = selected_rank;
+
+    // Residual eigenvalue computation
+    // For matrix-free: trace(K) - sum(leading_eigenvalues) / (n - rank)
+    // Note: We use kinship.trace() for total trace
+    low_rank_residual_eigenvalue = std::max(
+        0.0, (kinship.trace() - low_rank_eigenvalues.sum()) / static_cast<double>(n - rank));
+
+    // Compute relative error
+    // For matrix-free, we can estimate the Frobenius error from the sketch
+    const double grm_norm = kinship.trace(); // Approximation
+    const double approximation_norm_sq = low_rank_eigenvalues.squaredNorm() +
+        (n - rank) * low_rank_residual_eigenvalue * low_rank_residual_eigenvalue;
+    const double cross_product = low_rank_residual_eigenvalue * kinship.trace() +
+        ((low_rank_eigenvalues.array() - low_rank_residual_eigenvalue) *
+         low_rank_eigenvalues.array()).sum();
+    const double residual_norm_sq = std::max(
+        0.0, kinship.trace() * kinship.trace() + approximation_norm_sq - 2.0 * cross_product);
+    const double relative_error = std::sqrt(std::max(0.0, residual_norm_sq)) /
+        std::max(grm_norm, std::numeric_limits<double>::min());
+
+    low_rank_y = y;
+    low_rank_x = X.cast<double>();
+    const int p = static_cast<int>(low_rank_x.cols());
+    const int df = n - p;
+    if (df <= 0) throw std::invalid_argument("Low-rank LMM has no residual degrees of freedom");
+
+    // REML optimization for variance components (same as original)
+    auto apply_ratio_inverse = [&](double eta, const Eigen::MatrixXd& rhs) {
+        const double base = 1.0 / (1.0 + eta * low_rank_residual_eigenvalue);
+        Eigen::VectorXd correction =
+            (1.0 / (1.0 + eta * low_rank_eigenvalues.array()) - base).matrix();
+        return (base * rhs + low_rank_u *
+                (correction.asDiagonal() * (low_rank_u.transpose() * rhs))).eval();
+    };
+    auto objective = [&](double log_eta, double* quadratic) {
+        const double eta = std::exp(log_eta);
+        Eigen::MatrixXd rinv_x = apply_ratio_inverse(eta, low_rank_x);
+        Eigen::MatrixXd information = low_rank_x.transpose() * rinv_x;
+        Eigen::LDLT<Eigen::MatrixXd> solver(information);
+        if (solver.info() != Eigen::Success || !solver.isPositive())
+            return std::numeric_limits<double>::infinity();
+        Eigen::VectorXd rinv_y = apply_ratio_inverse(eta, Eigen::MatrixXd(low_rank_y)).col(0);
+        Eigen::VectorXd beta = solver.solve(low_rank_x.transpose() * rinv_y);
+        Eigen::VectorXd residual = low_rank_y - low_rank_x * beta;
+        const double qf = residual.dot(
+            apply_ratio_inverse(eta, Eigen::MatrixXd(residual)).col(0));
+        if (!(qf > 0.0) || !std::isfinite(qf)) return std::numeric_limits<double>::infinity();
+        if (quadratic) *quadratic = qf;
+        const double logdet_r = (n - rank) *
+            std::log1p(eta * low_rank_residual_eigenvalue) +
+            (1.0 + eta * low_rank_eigenvalues.array()).log().sum();
+        const double logdet_x = solver.vectorD().array().abs().max(1e-300).log().sum();
+        return logdet_r + logdet_x + df * std::log(qf / static_cast<double>(df));
+    };
+
+    const int grid_size = 81;
+    int best_index = 0;
+    double best_log_eta = -12.0;
+    double best_objective = objective(best_log_eta, nullptr);
+    for (int i = 1; i < grid_size; ++i) {
+        const double candidate = -12.0 + 24.0 * i / static_cast<double>(grid_size - 1);
+        const double value = objective(candidate, nullptr);
+        if (value < best_objective) {
+            best_objective = value;
+            best_log_eta = candidate;
+            best_index = i;
+        }
+    }
+    double left = -12.0 + 24.0 * std::max(0, best_index - 1) /
+        static_cast<double>(grid_size - 1);
+    double right = -12.0 + 24.0 * std::min(grid_size - 1, best_index + 1) /
+        static_cast<double>(grid_size - 1);
+    const double golden = (std::sqrt(5.0) - 1.0) / 2.0;
+    double c = right - golden * (right - left);
+    double d = left + golden * (right - left);
+    double fc = objective(c, nullptr), fd = objective(d, nullptr);
+    for (int iteration = 0; iteration < 80 && right - left > 1e-8; ++iteration) {
+        if (fc < fd) {
+            right = d; d = c; fd = fc; c = right - golden * (right - left);
+            fc = objective(c, nullptr);
+        } else {
+            left = c; c = d; fc = fd; d = left + golden * (right - left);
+            fd = objective(d, nullptr);
+        }
+    }
+    best_log_eta = 0.5 * (left + right);
+    double quadratic = 0.0;
+    best_objective = objective(best_log_eta, &quadratic);
+    if (!std::isfinite(best_objective)) throw std::runtime_error("Low-rank REML optimization failed");
+    null_delta = std::exp(-best_log_eta);
+    sigma2_e = quadratic / static_cast<double>(df);
+    sigma2_g = std::exp(best_log_eta) * sigma2_e;
+    low_rank_mode = true;
+
+    LowRankDiagnostics diagnostics;
+    diagnostics.requested_rank = rank;
+    diagnostics.effective_rank = rank;
+    diagnostics.sketch_size = std::min(n, rank + std::max(0, oversample));
+    diagnostics.total_rank = n;
+    diagnostics.trace_fraction = kinship.trace() > 0.0
+        ? low_rank_eigenvalues.sum() / kinship.trace() : 0.0;
+    diagnostics.trace_threshold_met = trace_threshold <= 0.0 ||
+        (low_rank_eigenvalues.sum() / kinship.trace() >= trace_threshold);
+    diagnostics.rank_selection = "MATRIX_FREE_AUTO_TRACE";
+    diagnostics.residual_eigenvalue = low_rank_residual_eigenvalue;
+    diagnostics.relative_frobenius_error = relative_error;
+    diagnostics.decomposition_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - start).count();
+    diagnostics.estimated_peak_bytes = static_cast<long long>(sizeof(double)) *
+        (2LL * n * sketch_size + static_cast<long long>(n) * rank +
+         static_cast<long long>(sketch_size) * sketch_size);
+    return diagnostics;
+}
+
+Eigen::MatrixXd LmmEngine::applyLowRankVinv(const Eigen::MatrixXd& rhs) const {
+    const double base = 1.0 / std::max(1e-12,
+        sigma2_g * low_rank_residual_eigenvalue + sigma2_e);
+    Eigen::VectorXd correction =
+        (1.0 / (sigma2_g * low_rank_eigenvalues.array() + sigma2_e) - base).matrix();
+    return base * rhs + low_rank_u *
+        (correction.asDiagonal() * (low_rank_u.transpose() * rhs));
 }
 
 namespace {
@@ -880,7 +1266,105 @@ static EbMarkerFit fit_eb_marker(const Eigen::VectorXd& D,
 
 } // namespace
 
+void LmmEngine::scanLowRank(const PlinkReader& reader, std::vector<GwasResult>& results,
+                            const std::vector<int>& keep_indices,
+                            const std::string& chrom_filter) {
+    const int m = reader.getNumSnps();
+    const int n = static_cast<int>(keep_indices.size());
+    results.resize(m);
+    Eigen::MatrixXd vinv_x = applyLowRankVinv(low_rank_x);
+    Eigen::MatrixXd information = low_rank_x.transpose() * vinv_x;
+    Eigen::LDLT<Eigen::MatrixXd> solver(information);
+    if (solver.info() != Eigen::Success || !solver.isPositive())
+        throw std::runtime_error("Low-rank LMM fixed-effect information matrix is singular");
+    Eigen::MatrixXd information_inverse = solver.solve(
+        Eigen::MatrixXd::Identity(information.rows(), information.cols()));
+    Eigen::VectorXd vinv_y = applyLowRankVinv(Eigen::MatrixXd(low_rank_y)).col(0);
+    Eigen::VectorXd beta = information_inverse * (low_rank_x.transpose() * vinv_y);
+    Eigen::VectorXd residual = low_rank_y - low_rank_x * beta;
+    Eigen::VectorXd py = applyLowRankVinv(Eigen::MatrixXd(residual)).col(0);
+    const double null_quad = std::max(residual.dot(py), std::numeric_limits<double>::min());
+    const double n_eff = std::max(1.0, static_cast<double>(n - low_rank_x.cols()));
+
+    const auto& bim = reader.getBimInfo();
+    const uint8_t* raw_data = reader.getData();
+    const size_t bytes_per_snp = reader.getBytesPerSnp();
+    const int block_size = 512;
+    Eigen::MatrixXd genotype(n, block_size);
+    std::vector<int> indices;
+    std::vector<double> frequencies;
+    indices.reserve(block_size);
+    frequencies.reserve(block_size);
+    auto flush = [&]() {
+        const int width = static_cast<int>(indices.size());
+        if (width == 0) return;
+        Eigen::MatrixXd block = genotype.leftCols(width);
+        Eigen::MatrixXd vinv_g = applyLowRankVinv(block);
+        Eigen::VectorXd scores = block.transpose() * py;
+        Eigen::VectorXd variances = (block.array() * vinv_g.array()).colwise().sum().transpose();
+        Eigen::MatrixXd xt_vinv_g = low_rank_x.transpose() * vinv_g;
+        Eigen::MatrixXd middle = information_inverse * xt_vinv_g;
+        variances -= (xt_vinv_g.array() * middle.array()).colwise().sum().matrix().transpose();
+        for (int column = 0; column < width; ++column) {
+            const int marker = indices[column];
+            const double variance = variances[column];
+            if (!(variance > 1e-12) || !std::isfinite(variance)) continue;
+            const double score = scores[column];
+            const double statistic = score / std::sqrt(variance);
+            const double pvalue = chisq_prob(statistic * statistic, 1);
+            GwasResult& result = results[marker];
+            result.chrom = bim[marker].chrom;
+            result.snp_id = bim[marker].id;
+            result.pos = bim[marker].bp_pos;
+            result.a1 = bim[marker].alt;
+            result.a2 = bim[marker].ref;
+            result.freq = frequencies[column];
+            result.n_obs = n;
+            result.beta = score / variance;
+            result.se = 1.0 / std::sqrt(variance);
+            result.p_value = pvalue;
+            result.log10_p = pvalue > 0.0 ? -std::log10(pvalue) : 300.0;
+            fill_gemma_lmm_tests(result, score, variance, null_quad, n_eff);
+        }
+        indices.clear();
+        frequencies.clear();
+    };
+
+    for (int marker = 0; marker < m; ++marker) {
+        if (!chrom_filter.empty() && bim[marker].chrom != chrom_filter) continue;
+        if (options.scan_from_bp >= 0 && bim[marker].bp_pos < options.scan_from_bp) continue;
+        if (options.scan_to_bp >= 0 && bim[marker].bp_pos > options.scan_to_bp) continue;
+        if (!options.extract_set.empty() && options.extract_set.count(bim[marker].id) == 0) continue;
+        if (!options.exclude_set.empty() && options.exclude_set.count(bim[marker].id) != 0) continue;
+        if (static_cast<int>(indices.size()) == block_size) flush();
+        const uint8_t* snp_data = raw_data + 3 + static_cast<size_t>(marker) * bytes_per_snp;
+        const int column = static_cast<int>(indices.size());
+        Eigen::VectorXd marker_raw(n);
+        for (int i = 0; i < n; ++i) {
+            const int sample = keep_indices[i];
+            const uint8_t code = (snp_data[sample >> 2] >> ((sample & 3) * 2)) & 3;
+            if (code == 1) {
+                marker_raw[i] = std::numeric_limits<double>::quiet_NaN();
+                continue;
+            }
+            const double value = code == 0 ? 2.0 : (code == 2 ? 1.0 : 0.0);
+            marker_raw[i] = value;
+        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe);
+        if (!prepared.passes_maf || !prepared.passes_hwe) continue;
+        genotype.col(column) = prepared.values;
+        indices.push_back(marker);
+        frequencies.push_back(prepared.allele_frequency);
+    }
+    flush();
+}
+
 void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
+    if (low_rank_mode) {
+        scanLowRank(reader, results, keep_indices, chrom_filter);
+        return;
+    }
     int m = reader.getNumSnps();
     int n = keep_indices.size(); // Original sample size
     int n_eig = D.size();        // Projected dimension (n or n-c)
@@ -926,6 +1410,16 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
     ProfileRemlFit null_ml_refit;
     if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
+    SPATest::Options spa_opts;
+    spa_opts.pval_threshold = 0.05;
+    SPATest spa(spa_opts);
+    if (options.use_spa) {
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
+    }
+
     const auto& bim = reader.getBimInfo();
     const uint8_t* raw_data = reader.getData();
     const size_t bytes_per_snp = reader.getBytesPerSnp();
@@ -964,6 +1458,9 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
             double beta_se = 1.0 / se;
             double stat = score / se;
             double pval = chisq_prob(stat * stat, 1);
+            if (options.use_spa && pval < spa_opts.pval_threshold) {
+                pval = spa.compute_pvalue(G_use.col(col), score, var_score);
+            }
 
             results[j].chrom = bim[j].chrom;
             results[j].snp_id = bim[j].id;
@@ -1001,10 +1498,8 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
         if (snp_indices.size() == block_size) flush_block();
 
         const uint8_t* snp_data = raw_data + 3 + (size_t)j * bytes_per_snp;
-        double sum_g = 0.0;
-        int valid_n = 0;
-        int hom_ref = 0, het = 0, hom_alt = 0;
         int col = (int)snp_indices.size();
+        Eigen::VectorXd marker_raw(n);
 
         for (int i = 0; i < n; ++i) {
             int sample_idx = keep_indices[i];
@@ -1012,29 +1507,19 @@ void LmmEngine::scan(const PlinkReader& reader, std::vector<GwasResult>& results
             uint8_t code = (byte >> ((sample_idx & 3) * 2)) & 3;
             if (code != 1) {
                 double val = (code == 0) ? 2.0 : (code == 2 ? 1.0 : 0.0);
-                G_block(i, col) = val;
-                sum_g += val;
-                valid_n++;
-                if (val == 0.0) hom_ref++;
-                else if (val == 1.0) het++;
-                else hom_alt++;
+                marker_raw[i] = val;
             } else {
-                G_block(i, col) = std::numeric_limits<double>::quiet_NaN();
+                marker_raw[i] = std::numeric_limits<double>::quiet_NaN();
             }
         }
-
-        double freq = (valid_n > 0) ? (sum_g / (2.0 * valid_n)) : 0.0;
-        if (valid_n < 3 || std::min(freq, 1.0 - freq) < options.min_maf) continue;
-        if (options.min_hwe > 0.0 && calculateHWE(hom_ref, het, hom_alt) < options.min_hwe) continue;
-        double mean = 2.0 * freq;
-        for (int i = 0; i < n; ++i) {
-            double val = G_block(i, col);
-            G_block(i, col) = std::isnan(val) ? 0.0 : (val - mean);
-        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe);
+        if (!prepared.passes_maf || !prepared.passes_hwe) continue;
+        G_block.col(col) = prepared.values;
         if (has_weights) G_block.col(col).array() *= options.obs_weights.array();
 
         snp_indices.push_back(j);
-        freqs.push_back(freq);
+        freqs.push_back(prepared.allele_frequency);
     }
     flush_block();
 }
@@ -1107,10 +1592,16 @@ void LmmEngine::scanEB(const PlinkReader& reader, std::vector<GwasResult>& resul
 
 // --------------------------------------------------------
 
+void LmmEngine::loadSparseGRM(const std::string& prefix) {
+    cosmic::SparseGrmReader::read(prefix, this->sparse_grm);
+    this->has_sparse_grm = true;
+}
+
 void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
     int n = keep_indices.size();
     size_t m = reader.getNumVariants();
-    results.resize(m);
+    results.clear();
+    results.reserve(m);
 
     int n_eig = D.size();
 
@@ -1155,6 +1646,16 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
     ProfileRemlFit null_ml_refit;
     if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
+    SPATest::Options spa_opts;
+    spa_opts.pval_threshold = 0.05;
+    SPATest spa(spa_opts);
+    if (options.use_spa) {
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
+    }
+
     std::string chrom, rsid, ref, alt;
     uint32_t pos;
     Eigen::VectorXf dosage;
@@ -1167,33 +1668,21 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
         if (!ok) break;
 
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
-        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
+        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
+        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
 
-        // Extract subset and center
-        Eigen::VectorXd g(n);
-        double sum_g = 0.0;
-        int valid_n = 0;
-
+        Eigen::VectorXd marker_raw(n);
         for(int i=0; i<n; ++i) {
             float val = dosage[keep_indices[i]]; // Pgen dosage is 0..2 or NAN
-            g[i] = val;
-            if (!std::isnan(val)) {
-                sum_g += val;
-                valid_n++;
-            }
+            marker_raw[i] = val;
         }
-
-        double freq = (valid_n > 0) ? (sum_g / (2.0 * valid_n)) : 0.0;
-        if (valid_n < 3 || std::min(freq, 1.0 - freq) < options.min_maf) continue;
-        double mean = 2.0 * freq;
-
-        for(int i=0; i<n; ++i) {
-            if (std::isnan(g[i])) g[i] = 0.0; // Mean imputation (centered)
-            else g[i] -= mean;
-        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe);
+        if (!prepared.passes_maf || !prepared.passes_hwe) continue;
+        Eigen::VectorXd g = prepared.values;
+        const double freq = prepared.allele_frequency;
 
         // Apply observation weights if provided
         if (options.obs_weights.size() == n) {
@@ -1222,33 +1711,40 @@ void LmmEngine::scan(PgenReader& reader, std::vector<GwasResult>& results, const
             var_score = g_Vinv_g - term2;
         }
 
+        if (!std::isfinite(var_score) || var_score <= 1e-9) continue;
         double se = std::sqrt(var_score);
         double beta_snp = (var_score > 1e-9) ? (score / var_score) : 0.0;
         double beta_se = (var_score > 1e-9) ? (1.0 / se) : NAN;
         double stat = (se > 0) ? (score / se) : 0.0;
         double pval = chisq_prob(stat * stat, 1);
 
-        results[j].chrom = chrom;
-        results[j].snp_id = rsid;
-        results[j].pos = pos;
-        results[j].a1 = alt;
-        results[j].a2 = ref;
-        results[j].freq = freq;
-        results[j].n_obs = n;
-        results[j].beta = beta_snp;
-        results[j].se = beta_se;
-        results[j].p_value = pval;
-        results[j].log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
-        fill_gemma_lmm_tests(results[j], score, var_score, null_quad, n_eff_lmm);
+        if (options.use_spa && pval < spa_opts.pval_threshold) {
+            pval = spa.compute_pvalue(g, score, var_score);
+        }
+
+        GwasResult result;
+        result.chrom = chrom;
+        result.snp_id = rsid;
+        result.pos = pos;
+        result.a1 = alt;
+        result.a2 = ref;
+        result.freq = freq;
+        result.n_obs = n;
+        result.beta = beta_snp;
+        result.se = beta_se;
+        result.p_value = pval;
+        result.log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+        fill_gemma_lmm_tests(result, score, var_score, null_quad, n_eff_lmm);
         if (options.profile_scale) {
-            apply_fixed_ratio_profile(results[j], score, var_score, null_quad, n_eff_lmm);
+            apply_fixed_ratio_profile(result, score, var_score, null_quad, n_eff_lmm);
         }
         if (options.gemma_refit) {
             Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
             ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
             ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
-            apply_gemma_refit(results[j], null_ml_refit, alt_ml_refit, alt_reml_refit);
+            apply_gemma_refit(result, null_ml_refit, alt_ml_refit, alt_reml_refit);
         }
+        results.push_back(std::move(result));
     }
 }
 
@@ -1266,8 +1762,8 @@ void LmmEngine::scanEB(PgenReader& reader, std::vector<GwasResult>& results, con
     for (size_t j = 0; j < m; ++j) {
         if (!reader.readVariant(chrom, rsid, pos, ref, alt, dosage)) break;
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
-        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
+        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
+        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
         double sum_g = 0.0;
@@ -1314,7 +1810,8 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     // Assuming BgenReader has similar readVariant or iterator
     int n = keep_indices.size();
     size_t m = reader.getNumVariants();
-    results.resize(m);
+    results.clear();
+    results.reserve(m);
 
     int n_eig = D.size();
 
@@ -1357,6 +1854,16 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
     ProfileRemlFit null_ml_refit;
     if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
 
+    SPATest::Options spa_opts;
+    spa_opts.pval_threshold = 0.05;
+    SPATest spa(spa_opts);
+    if (options.use_spa) {
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
+    }
+
     reader.reset();
 
     std::string chrom, rsid, ref, alt;
@@ -1368,32 +1875,21 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
         if (!ok) break;
 
         if (!chrom_filter.empty() && chrom != chrom_filter) continue;
-        if (options.scan_from_bp >= 0 && static_cast<int64_t>(pos) < options.scan_from_bp) continue;
-        if (options.scan_to_bp >= 0 && static_cast<int64_t>(pos) > options.scan_to_bp) continue;
+        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
+        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
         if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
         if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
 
-        Eigen::VectorXd g(n);
-        double sum_g = 0.0;
-        int valid_n = 0;
-
+        Eigen::VectorXd marker_raw(n);
         for(int i=0; i<n; ++i) {
             float val = dosage_f[keep_indices[i]];
-            g[i] = val;
-            if (!std::isnan(val)) {
-                sum_g += val;
-                valid_n++;
-            }
+            marker_raw[i] = val;
         }
-
-        double freq = (valid_n > 0) ? (sum_g / (2.0 * valid_n)) : 0.0;
-        if (valid_n < 3 || std::min(freq, 1.0 - freq) < options.min_maf) continue;
-        double mean = 2.0 * freq;
-
-        for(int i=0; i<n; ++i) {
-            if (std::isnan(g[i])) g[i] = 0.0;
-            else g[i] -= mean;
-        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe, false);
+        if (!prepared.passes_maf) continue;
+        Eigen::VectorXd g = prepared.values;
+        const double freq = prepared.allele_frequency;
 
         // Apply observation weights if provided
         if (options.obs_weights.size() == n) {
@@ -1421,12 +1917,75 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
             var_score = g_Vinv_g - term2;
         }
 
+        if (!std::isfinite(var_score) || var_score <= 1e-9) continue;
         double se = std::sqrt(var_score);
-        double beta_snp = (var_score > 1e-9) ? (score / var_score) : 0.0;
-        double beta_se = (var_score > 1e-9) ? (1.0 / se) : NAN;
+        double beta_snp = score / var_score;
+        double beta_se = 1.0 / se;
         double stat = (se > 0) ? (score / se) : 0.0;
         double pval = chisq_prob(stat * stat, 1);
 
+        if (options.use_spa && pval < spa_opts.pval_threshold) {
+            pval = spa.compute_pvalue(g, score, var_score);
+        }
+
+        GwasResult result;
+        result.chrom = chrom;
+        result.snp_id = rsid;
+        result.pos = pos;
+        result.a1 = alt;
+        result.a2 = ref;
+        result.freq = freq;
+        result.n_obs = n;
+        result.beta = beta_snp;
+        result.se = beta_se;
+        result.p_value = pval;
+        result.log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+        fill_gemma_lmm_tests(result, score, var_score, null_quad, n_eff_lmm);
+        if (options.profile_scale) {
+            apply_fixed_ratio_profile(result, score, var_score, null_quad, n_eff_lmm);
+        }
+        if (options.gemma_refit) {
+            Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
+            ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
+            ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
+            apply_gemma_refit(result, null_ml_refit, alt_ml_refit, alt_reml_refit);
+        }
+        results.push_back(std::move(result));
+    }
+}
+
+void LmmEngine::scanEB(BgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
+    const int n = (int)keep_indices.size();
+    const size_t m = reader.getNumVariants();
+    results.resize(m);
+    const bool has_weights = (options.obs_weights.size() == n);
+    reader.reset();
+    std::string chrom, rsid, ref, alt;
+    uint32_t pos = 0;
+    Eigen::VectorXf dosage;
+    Eigen::VectorXd g(n);
+
+    for (size_t j = 0; j < m; ++j) {
+        if (!reader.readVariant(chrom, rsid, pos, ref, alt, dosage)) break;
+        if (!chrom_filter.empty() && chrom != chrom_filter) continue;
+        if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
+        if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
+        double sum_g = 0.0;
+        int valid_n = 0;
+        for (int i = 0; i < n; ++i) {
+            float val = dosage[keep_indices[i]];
+            g[i] = val;
+            if (!std::isnan(val)) { sum_g += val; valid_n++; }
+        }
+        if (valid_n < 3) continue;
+        double freq = sum_g / (2.0 * valid_n);
+        double maf = std::min(freq, 1.0 - freq);
+        if (maf < options.min_maf) continue;
+        double mean = 2.0 * freq;
+        for (int i = 0; i < n; ++i) g[i] = std::isnan(g[i]) ? 0.0 : (g[i] - mean);
+        if (has_weights) g.array() *= options.obs_weights.array();
+
+        EbMarkerFit eb = fit_eb_marker(D, Uty, UtX, W_proj.transpose() * g, sigma2_g, sigma2_e);
         results[j].chrom = chrom;
         results[j].snp_id = rsid;
         results[j].pos = pos;
@@ -1434,24 +1993,270 @@ void LmmEngine::scan(BgenReader& reader, std::vector<GwasResult>& results, const
         results[j].a2 = ref;
         results[j].freq = freq;
         results[j].n_obs = n;
-        results[j].beta = beta_snp;
-        results[j].se = beta_se;
-        results[j].p_value = pval;
-        results[j].log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
-        fill_gemma_lmm_tests(results[j], score, var_score, null_quad, n_eff_lmm);
+        results[j].beta = eb.beta;
+        results[j].se = (eb.post_var > 0.0) ? std::sqrt(eb.post_var) : 0.0;
+        results[j].p_value = eb.p_value;
+        results[j].log10_p = (eb.p_value > 0.0) ? std::max(0.0, -std::log10(eb.p_value)) : 300.0;
+        results[j].eb_marker_lambda = eb.lambda;
+        results[j].eb_prior_var = eb.lambda * eb.sigma2;
+        results[j].eb_post_var = eb.post_var;
+        results[j].eb_confidence = eb.confidence;
+        results[j].eb_wald = eb.wald;
+        results[j].eb_lrt = eb.lrt;
+        results[j].eb_lrt_p = eb.lrt_p;
+        results[j].eb_sigma2 = eb.sigma2;
+        results[j].eb_conv = eb.conv;
+    }
+}
+
+void LmmEngine::scan(SequentialGenotypeMatrix& reader, std::vector<GwasResult>& results,
+                     const std::vector<int>& keep_indices, const std::string& chrom_filter) {
+    const int n = static_cast<int>(keep_indices.size());
+    const int n_eig = D.size();
+    Eigen::VectorXd V_inv_diag(n_eig);
+    for (int i = 0; i < n_eig; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
+
+    Eigen::MatrixXd weighted_UtX;
+    Eigen::MatrixXd Xt_Vinv_X_inv;
+    if (UtX.cols() > 0) {
+        weighted_UtX = UtX.array().colwise() * V_inv_diag.array();
+        const Eigen::MatrixXd cross = UtX.transpose() * weighted_UtX;
+        Eigen::LDLT<Eigen::MatrixXd> ldlt(cross);
+        Xt_Vinv_X_inv = ldlt.solve(Eigen::MatrixXd::Identity(cross.rows(), cross.cols()));
+    }
+    Eigen::VectorXd Xt_Vinv_y = Eigen::VectorXd::Zero(UtX.cols());
+    for (int i = 0; i < n_eig; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
+    Eigen::VectorXd beta_null = UtX.cols() > 0 ? Xt_Vinv_X_inv * Xt_Vinv_y : Eigen::VectorXd();
+    Eigen::VectorXd resid = Uty;
+    if (UtX.cols() > 0) resid -= UtX * beta_null;
+    const Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    const double null_quad = std::max(resid.dot(P_y), std::numeric_limits<double>::min());
+    const double n_eff_lmm = std::max(1.0, static_cast<double>(Uty.size() - UtX.cols()));
+    ProfileRemlFit null_ml_refit;
+    if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
+
+    SPATest::Options spa_opts;
+    spa_opts.pval_threshold = 0.05;
+    SPATest spa(spa_opts);
+    if (options.use_spa) {
+        spa.set_null_model(Eigen::VectorXd::Zero(n),
+                           Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e));
+    }
+
+    results.clear();
+    results.reserve(reader.getNumVariants());
+    reader.reset();
+    std::string chrom, id, ref, alt;
+    uint32_t pos = 0;
+    Eigen::VectorXf dosage;
+    while (reader.readVariant(chrom, id, pos, ref, alt, dosage)) {
+        if (!chrom_filter.empty() && chrom != chrom_filter) continue;
+        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
+        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
+        if (!options.extract_set.empty() && !options.extract_set.count(id)) continue;
+        if (options.exclude_set.count(id)) continue;
+        if (dosage.size() != reader.getNumSamples()) throw std::runtime_error("Sequential genotype dosage length mismatch");
+
+        Eigen::VectorXd marker_raw(n);
+        for (int i = 0; i < n; ++i) {
+            const float value = dosage[keep_indices[i]];
+            marker_raw[i] = value;
+        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe);
+        if (!prepared.passes_maf || !prepared.passes_hwe) continue;
+        Eigen::VectorXd g = prepared.values;
+        const double frequency = prepared.allele_frequency;
+        if (options.obs_weights.size() == n) g.array() *= options.obs_weights.array();
+
+        const Eigen::VectorXd Utg = W_proj.transpose() * g;
+        const double score = Utg.dot(P_y);
+        const Eigen::VectorXd Vinv_g = Utg.cwiseProduct(V_inv_diag);
+        double var_score = Utg.dot(Vinv_g);
+        if (!options.use_residuals && UtX.cols() > 0) {
+            const Eigen::VectorXd Xt_Vinv_g = weighted_UtX.transpose() * Utg;
+            var_score -= Xt_Vinv_g.dot(Xt_Vinv_X_inv * Xt_Vinv_g);
+        }
+        if (!std::isfinite(var_score) || var_score <= 1e-9) continue;
+        const double score_se = var_score > 0.0 ? std::sqrt(var_score) : 0.0;
+        const double beta = var_score > 1e-9 ? score / var_score : 0.0;
+        double p_value = score_se > 0.0 ? chisq_prob(score * score / var_score, 1) : 1.0;
+        if (options.use_spa && p_value < spa_opts.pval_threshold) {
+            p_value = spa.compute_pvalue(g, score, var_score);
+        }
+
+        GwasResult result;
+        result.chrom = chrom;
+        result.snp_id = id;
+        result.pos = pos;
+        result.a1 = alt;
+        result.a2 = ref;
+        result.freq = frequency;
+        result.n_obs = n;
+        result.beta = beta;
+        result.se = var_score > 1e-9 ? 1.0 / score_se : NAN;
+        result.p_value = p_value;
+        result.log10_p = p_value > 0.0 ? -std::log10(p_value) : 300.0;
+        fill_gemma_lmm_tests(result, score, var_score, null_quad, n_eff_lmm);
+        if (options.profile_scale) apply_fixed_ratio_profile(result, score, var_score, null_quad, n_eff_lmm);
+        if (options.gemma_refit) {
+            const Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
+            apply_gemma_refit(result, null_ml_refit,
+                              profile_lmm_fit(D, Uty, alt_X, false),
+                              profile_lmm_fit(D, Uty, alt_X, true));
+        }
+        results.push_back(std::move(result));
+    }
+}
+
+void LmmEngine::scan(VcfReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
+    int n = keep_indices.size();
+    size_t m = reader.getNumVariants();
+    results.clear();
+    results.reserve(m);
+
+    int n_eig = D.size();
+
+    // Prepare V inverse diagonal
+    Eigen::VectorXd V_inv_diag(n_eig);
+    for(int i=0; i<n_eig; ++i) V_inv_diag[i] = 1.0 / (sigma2_g * D[i] + sigma2_e);
+
+    Eigen::MatrixXd weighted_UtX;
+    if (UtX.cols() > 0) {
+        weighted_UtX = UtX.array().colwise() * V_inv_diag.array();
+    }
+
+    // Fixed Effects Part
+    Eigen::MatrixXd Xt_Vinv_X(UtX.cols(), UtX.cols());
+    if (UtX.cols() > 0) Xt_Vinv_X = UtX.transpose() * weighted_UtX;
+    Eigen::MatrixXd Xt_Vinv_X_inv;
+    if (UtX.cols() > 0) {
+        Eigen::LLT<Eigen::MatrixXd> lltX959(Xt_Vinv_X);
+        if(lltX959.info() == Eigen::Success) {
+            Xt_Vinv_X_inv = lltX959.solve(Eigen::MatrixXd::Identity(Xt_Vinv_X.rows(), Xt_Vinv_X.cols()));
+        } else {
+            Xt_Vinv_X_inv = Xt_Vinv_X.inverse();
+        }
+    }
+
+    Eigen::VectorXd Xt_Vinv_y = Eigen::VectorXd::Zero(UtX.cols());
+    for(int i=0; i<n_eig; ++i) Xt_Vinv_y += V_inv_diag[i] * (UtX.row(i).transpose() * Uty[i]);
+
+    Eigen::VectorXd beta_null(UtX.cols());
+    if (UtX.cols() > 0) {
+        beta_null = Xt_Vinv_X_inv * Xt_Vinv_y;
+    }
+
+    Eigen::VectorXd resid = Uty;
+    if (UtX.cols() > 0) {
+        resid -= UtX * beta_null;
+    }
+
+    Eigen::VectorXd P_y = resid.cwiseProduct(V_inv_diag);
+    const double null_quad = std::max(resid.dot(P_y), std::numeric_limits<double>::min());
+    const double n_eff_lmm = std::max(1.0, static_cast<double>(Uty.size() - UtX.cols()));
+    ProfileRemlFit null_ml_refit;
+    if (options.gemma_refit) null_ml_refit = profile_lmm_fit(D, Uty, UtX, false);
+
+    SPATest::Options spa_opts;
+    spa_opts.pval_threshold = 0.05;
+    SPATest spa(spa_opts);
+    if (options.use_spa) {
+        // Use null model variance for SPA (mu=0 for centered LMM, V_ii = sigma2_g + sigma2_e)
+        Eigen::VectorXd null_mu = Eigen::VectorXd::Constant(n, 0.0);
+        Eigen::VectorXd null_var = Eigen::VectorXd::Constant(n, sigma2_g + sigma2_e);
+        spa.set_null_model(null_mu, null_var);
+    }
+
+    std::string chrom, rsid, ref, alt;
+    uint32_t pos;
+    Eigen::VectorXf dosage;
+
+    reader.reset();
+
+    // Loop through variants
+    for(size_t j=0; j<m; ++j) {
+        bool ok = reader.readVariant(chrom, rsid, pos, ref, alt, dosage);
+        if (!ok) break;
+
+        if (!chrom_filter.empty() && chrom != chrom_filter) continue;
+        if (options.scan_from_bp >= 0 && pos < static_cast<uint32_t>(options.scan_from_bp)) continue;
+        if (options.scan_to_bp >= 0 && pos > static_cast<uint32_t>(options.scan_to_bp)) continue;
+        if (!options.extract_set.empty() && options.extract_set.find(rsid) == options.extract_set.end()) continue;
+        if (!options.exclude_set.empty() && options.exclude_set.find(rsid) != options.exclude_set.end()) continue;
+
+        Eigen::VectorXd marker_raw(n);
+        for(int i=0; i<n; ++i) {
+            float val = dosage[keep_indices[i]];
+            marker_raw[i] = val;
+        }
+        const auto prepared = genetics::prepareAssociationMarker(
+            marker_raw, options.snp_model, options.min_maf, options.min_hwe);
+        if (!prepared.passes_maf || !prepared.passes_hwe) continue;
+        Eigen::VectorXd g = prepared.values;
+        const double freq = prepared.allele_frequency;
+        if (options.obs_weights.size() == n) g.array() *= options.obs_weights.array();
+
+        // Compute Utg = W_proj^T * g
+        Eigen::VectorXd Utg(n_eig);
+        if (options.use_covariate_projection) {
+            Utg = W_proj.transpose() * g;
+        } else {
+            Utg = W_proj.transpose() * g;
+        }
+
+        double score = Utg.dot(P_y);
+        double var_score = 0.0;
+
+        Eigen::VectorXd Vinv_g = Utg.cwiseProduct(V_inv_diag);
+        double g_Vinv_g = Utg.dot(Vinv_g);
+
+        if (options.use_residuals || UtX.cols() == 0) {
+            var_score = g_Vinv_g;
+        } else {
+            Eigen::VectorXd Xt_Vinv_g = weighted_UtX.transpose() * Utg;
+            double term2 = Xt_Vinv_g.transpose() * Xt_Vinv_X_inv * Xt_Vinv_g;
+            var_score = g_Vinv_g - term2;
+        }
+
+        if (!std::isfinite(var_score) || var_score <= 1e-9) continue;
+        double se = std::sqrt(var_score);
+        double beta_snp = (var_score > 1e-9) ? (score / var_score) : 0.0;
+        double beta_se = (var_score > 1e-9) ? (1.0 / se) : NAN;
+        double stat = (se > 0) ? (score / se) : 0.0;
+        double pval = chisq_prob(stat * stat, 1);
+
+        if (options.use_spa && pval < spa_opts.pval_threshold) {
+            pval = spa.compute_pvalue(g, score, var_score);
+        }
+
+        GwasResult result;
+        result.chrom = chrom;
+        result.snp_id = rsid;
+        result.pos = pos;
+        result.a1 = alt;
+        result.a2 = ref;
+        result.freq = freq;
+        result.n_obs = n;
+        result.beta = beta_snp;
+        result.se = beta_se;
+        result.p_value = pval;
+        result.log10_p = (pval > 0) ? -std::log10(pval) : 300.0;
+        fill_gemma_lmm_tests(result, score, var_score, null_quad, n_eff_lmm);
         if (options.profile_scale) {
-            apply_fixed_ratio_profile(results[j], score, var_score, null_quad, n_eff_lmm);
+            apply_fixed_ratio_profile(result, score, var_score, null_quad, n_eff_lmm);
         }
         if (options.gemma_refit) {
             Eigen::MatrixXd alt_X = append_design_column(UtX, Utg);
             ProfileRemlFit alt_ml_refit = profile_lmm_fit(D, Uty, alt_X, false);
             ProfileRemlFit alt_reml_refit = profile_lmm_fit(D, Uty, alt_X, true);
-            apply_gemma_refit(results[j], null_ml_refit, alt_ml_refit, alt_reml_refit);
+            apply_gemma_refit(result, null_ml_refit, alt_ml_refit, alt_reml_refit);
         }
+        results.push_back(std::move(result));
     }
 }
 
-void LmmEngine::scanEB(BgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
+void LmmEngine::scanEB(VcfReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter) {
     const int n = (int)keep_indices.size();
     const size_t m = reader.getNumVariants();
     results.resize(m);

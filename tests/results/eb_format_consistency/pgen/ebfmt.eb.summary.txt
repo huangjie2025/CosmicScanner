@@ -1,0 +1,8 @@
+Metric	Value
+method	EB-LMM random-SNP scan
+tested_markers	280
+effective_tests	36.9988779585
+effective_tests_per_marker	0.132138849852
+bonferroni_0.05	0.000178571428571
+eb_mbonf_0.05	0.00135139233293
+note	Validated EB-LMM auxiliary scan; report standard Bonferroni/FDR alongside EB-mBonf and keep standard LMM results in formal analyses.

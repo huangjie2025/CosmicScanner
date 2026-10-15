@@ -1,0 +1,107 @@
+#pragma once
+
+#include "association/association_test.h"
+#include "spa_test.h"
+
+#include <Eigen/SparseCholesky>
+#include <Eigen/SparseCore>
+#include <string>
+#include <vector>
+
+namespace cosmic::association {
+
+struct SaigeStyleOptions {
+    int max_iterations = 30;
+    double tolerance = 1e-6;
+    double maximum_tau = 10.0;
+};
+
+struct SaigeStyleResult {
+    double beta = 0.0;
+    double se = 0.0;
+    double score = 0.0;
+    double score_variance = 0.0;
+    double p_value = 1.0;
+    double normal_p_value = 1.0;
+    bool spa_used = false;
+    bool tested = false;
+};
+
+struct SaigeStyleSolverMetadata {
+    std::string null_solver = "sparse_ldlt_pql";
+    std::string variance_component_method = "moment_he";
+    int iterations = 0;
+    int sparse_nnz = 0;
+    bool converged = false;
+};
+
+struct MacVarianceRatioBin {
+    int min_mac = 0;
+    int max_mac = 0; // 0 = unlimited
+    int n_calibration_markers = 0;
+    double variance_ratio = 1.0;
+    bool fallback = false;
+    std::string fallback_source; // "nearest", "global"
+};
+
+class SaigeStyleNullModel {
+public:
+    explicit SaigeStyleNullModel(SaigeStyleOptions options = {});
+
+    void fit(const Eigen::VectorXd& phenotype, const Eigen::MatrixXd& covariates,
+             const Eigen::SparseMatrix<double>& kinship);
+    double calibrateVarianceRatio(const std::vector<Eigen::VectorXd>& markers);
+    SaigeStyleResult testMarker(const Eigen::VectorXd& marker, SPATest* spa = nullptr) const;
+
+    // MAC-stratified variance ratio access
+    const std::vector<MacVarianceRatioBin>& macBins() const { return mac_bins_; }
+    double varianceRatioForMac(int mac) const;
+    double globalVarianceRatio() const { return variance_ratio_; }
+
+    const Eigen::VectorXd& beta() const { return beta_; }
+    const Eigen::VectorXd& fittedProbabilities() const { return mu_; }
+    const Eigen::VectorXd& workingVariance() const { return weight_; }
+    double tau() const { return tau_; }
+    double varianceRatio() const { return variance_ratio_; }
+    int calibrationMarkers() const { return calibration_markers_; }
+    const SaigeStyleSolverMetadata& metadata() const { return metadata_; }
+
+private:
+    double estimateTau(const Eigen::VectorXd& pearson) const;
+    double naiveVariance(const Eigen::VectorXd& marker, Eigen::VectorXd* adjusted) const;
+    double exactVariance(const Eigen::VectorXd& marker) const;
+    void factorizeWorkingCovariance();
+
+    SaigeStyleOptions options_;
+    Eigen::VectorXd y_, beta_, mu_, weight_, residual_;
+    Eigen::MatrixXd X_, a_inverse_x_, xt_a_inverse_x_inverse_, xt_w_x_inverse_;
+    Eigen::SparseMatrix<double> kinship_, working_covariance_;
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> factor_;
+    double tau_ = 0.0;
+    double variance_ratio_ = 1.0;
+    int calibration_markers_ = 0;
+    std::vector<MacVarianceRatioBin> mac_bins_;
+    SaigeStyleSolverMetadata metadata_;
+};
+
+class SaigeStyleTest final : public AssociationTest {
+public:
+    explicit SaigeStyleTest(SaigeStyleOptions options = {});
+    SaigeStyleTest(Eigen::SparseMatrix<double> kinship, SaigeStyleOptions options = {});
+
+    AssociationModel getModelType() const override { return AssociationModel::SAIGE_STYLE; }
+    AssociationCapabilities capabilities() const override { return {true, false, false}; }
+    void prepare(const ScanContext& context) override;
+    std::vector<AssociationResult> scanBlock(const GenotypeBlock& block) override;
+
+    SaigeStyleNullModel& nullModel() { return null_model_; }
+    const std::vector<SaigeStyleResult>& results() const { return results_; }
+
+private:
+    Eigen::SparseMatrix<double> kinship_;
+    SaigeStyleNullModel null_model_;
+    std::vector<Eigen::Index> observation_to_sample_;
+    std::vector<SaigeStyleResult> results_;
+};
+
+} // namespace cosmic::association

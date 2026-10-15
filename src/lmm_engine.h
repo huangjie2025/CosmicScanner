@@ -8,11 +8,15 @@
 #include "plink_reader.h"
 #include "bgen_reader.h"
 #include "pgen_reader.h"
+#include "vcf/vcf_reader.h"
 #include "eigen_vce.h" // Added for EigenVce dependency
+#include "spa_test.h"  // Saddle Point Approximation
+#include "kinship_operator.h" // Matrix-free kinship operator
 
 namespace cosmic {
 
 class MatrixFreePCG;
+class MatrixFreeVce;
 
 // Structure to hold LMM scan results
 struct GwasResult {
@@ -52,10 +56,25 @@ struct GwasResult {
 // Focuses exclusively on genome-wide scanning using pre-computed Variance Components
 class LmmEngine {
 public:
+    struct LowRankDiagnostics {
+        int requested_rank = 0;
+        int effective_rank = 0;
+        int sketch_size = 0;
+        int total_rank = 0;
+        double trace_fraction = 0.0;
+        bool trace_threshold_met = false;
+        std::string rank_selection = "FIXED";
+        double residual_eigenvalue = 0.0;
+        double relative_frobenius_error = 0.0;
+        double decomposition_seconds = 0.0;
+        long long estimated_peak_bytes = 0;
+    };
+
     struct Options {
         int thread_num = 1;
         double min_maf = 0.01;
         double min_hwe = 0.0;   // Minimum HWE p-value filter (0.0 to disable)
+        std::string snp_model = "additive";
         bool fast_mode = false; // If true, use fixed delta from null model
         bool profile_scale = false; // Fixed null variance ratio, per-SNP residual-scale profile
         bool gemma_refit = false; // If true, profile alternative VCE per SNP for GEMMA LMM Wald/LRT
@@ -74,11 +93,37 @@ public:
 
     // 1. Prepare for Scan using an already solved EigenVce Null Model
     void prepareFromVce(const EigenVce& vce);
+    // 1b. Prepare for Scan using an already solved MatrixFreeVce Null Model (matrix-free path)
+    void prepareFromMatrixFreeVce(const MatrixFreeVce& vce);
+    LowRankDiagnostics prepareLowRank(const Eigen::VectorXd& y,
+                                      const Eigen::MatrixXf& X,
+                                      const Eigen::MatrixXd& grm,
+                                      int rank, int oversample,
+                                      long long seed,
+                                      double trace_threshold = 0.0,
+                                      int min_rank = 1);
+
+    // Matrix-free low-rank preparation using streaming kinship operator
+    // This avoids allocating the dense N x N GRM
+    LowRankDiagnostics prepareLowRankMatrixFree(const Eigen::VectorXd& y,
+                                                 const Eigen::MatrixXf& X,
+                                                 const KinshipOperator& kinship,
+                                                 int rank, int oversample,
+                                                 long long seed,
+                                                 double trace_threshold = 0.0,
+                                                 int min_rank = 1,
+                                                 int n_threads = 1);
 
     // Accessors for Null Model Results
     double getDelta() const { return null_delta; }
     double getSigma2g() const { return sigma2_g; }
     double getSigma2e() const { return sigma2_e; }
+
+    // Load Sparse GRM
+    void loadSparseGRM(const std::string& prefix);
+
+    Eigen::SparseMatrix<double> sparse_grm;
+    bool has_sparse_grm = false;
 
     // 2. Scan: Run GWAS on all SNPs in the reader
     // keep_indices: Indices of samples to use (must match prepare's y and X)
@@ -94,47 +139,64 @@ public:
     void scan(PgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
     void scanEB(PgenReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
 
+    // Scan VCF
+    void scan(VcfReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+    void scanEB(VcfReader& reader, std::vector<GwasResult>& results, const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+
+    void scan(SequentialGenotypeMatrix& reader, std::vector<GwasResult>& results,
+              const std::vector<int>& keep_indices, const std::string& chrom_filter = "");
+
     // Biobank Mode (Matrix-Free PCG)
     // Prepare with pre-computed VCs (from RHE)
     // Supports optional covariate matrix X (which will be projected out)
-    void prepareBiobank(const Eigen::VectorXd& y, 
-                        const Eigen::MatrixXf& X, 
+    void prepareBiobank(const Eigen::VectorXd& y,
+                        const Eigen::MatrixXf& X,
                         double s2g, double s2e);
-                        
+
     // Run PCG-based Scan
-    void scanBiobank(PlinkReader& reader, 
-                     std::vector<GwasResult>& results, 
-                     const std::vector<int>& keep_indices,
-                     const std::string& chrom_filter = "");
-                     
-    void scanBiobank(PgenReader& reader, 
-                     std::vector<GwasResult>& results, 
+    void scanBiobank(PlinkReader& reader,
+                     std::vector<GwasResult>& results,
                      const std::vector<int>& keep_indices,
                      const std::string& chrom_filter = "");
 
-    void scanBiobank(BgenReader& reader, 
-                     std::vector<GwasResult>& results, 
+    void scanBiobank(PgenReader& reader,
+                     std::vector<GwasResult>& results,
+                     const std::vector<int>& keep_indices,
+                     const std::string& chrom_filter = "");
+
+    void scanBiobank(BgenReader& reader,
+                     std::vector<GwasResult>& results,
                      const std::vector<int>& keep_indices,
                      const std::string& chrom_filter = "");
 
 private:
     Options options;
-    
+
     // Extracted from EigenVce
     Eigen::VectorXd D;
     Eigen::MatrixXd W_proj; // Rotation matrix (either U or A*U depending on projection)
     Eigen::VectorXd Uty;
     Eigen::MatrixXd UtX;
-    
+
+    bool low_rank_mode = false;
+    Eigen::MatrixXd low_rank_u;
+    Eigen::VectorXd low_rank_eigenvalues;
+    Eigen::VectorXd low_rank_y;
+    Eigen::MatrixXd low_rank_x;
+    double low_rank_residual_eigenvalue = 0.0;
+
     double sigma2_g = 0.0;
     double sigma2_e = 0.0;
     double null_delta = 1.0;
-    
+
     // Biobank Mode Variables
     Eigen::VectorXd y_raw;
     Eigen::MatrixXf X_raw; // Can also store Q_proj
 
     double estimateTraceInverse(MatrixFreePCG& pcg, int n, int k);
+    Eigen::MatrixXd applyLowRankVinv(const Eigen::MatrixXd& rhs) const;
+    void scanLowRank(const PlinkReader& reader, std::vector<GwasResult>& results,
+                     const std::vector<int>& keep_indices, const std::string& chrom_filter);
 };
 
 } // namespace cosmic

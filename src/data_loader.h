@@ -14,6 +14,7 @@
 #include "plink_reader.h"
 #include "bgen_reader.h"
 #include "pgen_reader.h"
+#include "vcf/vcf_reader.h"
 #include "grm_builder.h"
 #include "config.h"
 
@@ -23,6 +24,7 @@ namespace DataLoader {
 struct GenotypeMeta {
     bool is_bgen = false;
     bool is_pgen = false;
+    bool is_vcf = false;
     int n_samples = 0;
     int n_snps = 0;
     std::vector<std::string> fids;
@@ -37,15 +39,53 @@ inline GenotypeMeta loadGenotype(
     const std::string& pgen_file,
     const std::string& pvar_file,
     const std::string& psam_file,
+    const std::string& vcf_file,
+    const std::string& vcf_tbi_file,
+    const std::string& vcf_sample_file,
     PlinkReader& plink_reader,
     BgenReader& bgen_reader,
-    PgenReader& pgen_reader)
+    PgenReader& pgen_reader,
+    VcfReader& vcf_reader)
 {
     GenotypeMeta meta;
     meta.is_bgen = !bgen_file.empty();
     meta.is_pgen = (!pfile_prefix.empty() || !pgen_file.empty());
+    meta.is_vcf = !vcf_file.empty();
 
-    if (meta.is_bgen) {
+    if (meta.is_vcf) {
+        std::cout << "Loading VCF data from: " << vcf_file << "\n";
+        vcf_reader.open(vcf_file, vcf_tbi_file);
+        vcf_reader.reset();
+        meta.n_samples = vcf_reader.getNumSamples();
+        meta.n_snps = vcf_reader.getNumVariants();
+
+        if (!vcf_sample_file.empty()) {
+            std::cout << "Loading VCF sample file: " << vcf_sample_file << "\n";
+            std::ifstream sfs(vcf_sample_file);
+            std::string line;
+            int cnt = 0;
+            while (std::getline(sfs, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                std::stringstream ss(line);
+                std::string fid, iid;
+                ss >> fid >> iid;
+                meta.fids.push_back(fid);
+                meta.iids.push_back(iid);
+                cnt++;
+            }
+            if (cnt != meta.n_samples) {
+                std::cerr << "Warning: VCF sample file count (" << cnt << ") != VCF sample count (" << meta.n_samples << ").\n";
+            }
+        } else {
+            const auto& ids = vcf_reader.getSampleIds();
+            for (const auto& id : ids) {
+                // Without a sample mapping file, treat the full VCF sample ID as IID with FID="0"
+                // Only split on '_' or ':' if user provides --vcf-sample mapping file
+                meta.fids.push_back("0");
+                meta.iids.push_back(id);
+            }
+        }
+    } else if (meta.is_bgen) {
         std::cout << "Loading BGEN data from: " << bgen_file << "\n";
         bgen_reader.open(bgen_file);
         meta.n_samples = bgen_reader.initialize();
@@ -54,7 +94,6 @@ inline GenotypeMeta loadGenotype(
         if (!sample_file.empty()) {
             std::cout << "Loading sample file: " << sample_file << "\n";
             std::ifstream sfs(sample_file);
-            if (!sfs) throw std::runtime_error("Cannot open BGEN sample file: " + sample_file);
             std::string line;
             std::getline(sfs, line);
             std::getline(sfs, line);
@@ -69,8 +108,7 @@ inline GenotypeMeta loadGenotype(
                 cnt++;
             }
             if (cnt != meta.n_samples) {
-                throw std::runtime_error("BGEN sample file count (" + std::to_string(cnt)
-                    + ") does not match BGEN sample count (" + std::to_string(meta.n_samples) + ")");
+                std::cerr << "Warning: Sample file count (" << cnt << ") != BGEN sample count (" << meta.n_samples << ").\n";
             }
         } else {
             const auto& ids = bgen_reader.getSampleIds();
@@ -247,11 +285,14 @@ inline Eigen::VectorXd loadPhenotype(
     return y;
 }
 
-inline void runMakeGrm(const GwasConfig& cfg, PlinkReader& plink_reader, BgenReader& bgen_reader, PgenReader& pgen_reader, bool is_bgen, bool is_pgen) {
+inline void runMakeGrm(const GwasConfig& cfg, PlinkReader& plink_reader, BgenReader& bgen_reader, PgenReader& pgen_reader, VcfReader& vcf_reader, bool is_bgen, bool is_pgen, bool is_vcf, SequentialGenotypeMatrix* generic_reader = nullptr) {
     std::cout << (cfg.make_grm_sparse ? "Calculating Sparse GRM..." : "Calculating GRM...") << "\n";
     GrmBuilder::Options opts;
     opts.min_maf = (float)cfg.min_maf;
     opts.min_hwe = (float)cfg.min_hwe;
+    opts.bgen_dom_max_missing = cfg.bgen_dom_max_missing;
+    opts.bgen_dom_min_info = cfg.bgen_dom_min_info;
+    opts.bgen_dom_entropy_warning = cfg.bgen_dom_entropy_warning;
     opts.algorithm = cfg.grm_alg;
     opts.force_slow = cfg.force_slow;
     opts.snp_weight_file = cfg.snp_weight_file;
@@ -279,7 +320,13 @@ inline void runMakeGrm(const GwasConfig& cfg, PlinkReader& plink_reader, BgenRea
     #endif
 
     GrmBuilder builder(opts);
-    if (is_bgen) {
+    if (generic_reader) {
+        if (cfg.make_grm_sparse) throw std::runtime_error("Sparse GRM is not supported for HapMap/text input");
+        builder.compute(*generic_reader);
+    } else if (is_vcf) {
+        if (cfg.make_grm_sparse) builder.computeSparse(vcf_reader);
+        else builder.compute(vcf_reader);
+    } else if (is_bgen) {
         if (cfg.make_grm_sparse) builder.computeSparse(bgen_reader);
         else builder.compute(bgen_reader);
     } else if (is_pgen) {
