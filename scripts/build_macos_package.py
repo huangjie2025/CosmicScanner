@@ -31,8 +31,8 @@ def main():
         subprocess.run(['cmake','-S',str(cmake_source),'-B',str(work/('build-'+name)),'-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_PREFIX='+str(prefix),*flags],env=env,check=True)
         subprocess.run(['cmake','--build',str(work/('build-'+name)),'-j2'],env=env,check=True)
         subprocess.run(['cmake','--install',str(work/('build-'+name))],env=env,check=True)
-    subprocess.run([ c++,-std=c++17,-I+str(args.eigen.resolve()),-I+str(root/libCosmicCore/src),str(root/tests/test_pheno_record_fields.cpp),str(root/libCosmicCore/src/pheno_reader.cpp),-o,str(work/test_pheno_record_fields)],env=env,check=True)
-    subprocess.run([str(work/test_pheno_record_fields),str(work/pheno_record_fields.txt)],env=env,check=True)
+    subprocess.run(["c++","-std=c++17","-I"+str(args.eigen.resolve()),"-I"+str(root/"libCosmicCore/src"),str(root/"tests/test_pheno_record_fields.cpp"),str(root/"libCosmicCore/src/pheno_reader.cpp"),"-o",str(work/"test_pheno_record_fields")],env=env,check=True)
+    subprocess.run([str(work/"test_pheno_record_fields"),str(work/"pheno_record_fields.txt")],env=env,check=True)
     legal=work/'third-party-licenses';legal.mkdir(exist_ok=True)
     for name,source in [('zlib',work/'zlib-1.3.2/LICENSE'),('zstd',work/'zstd-1.5.7/LICENSE')]:
         if not source.exists():raise RuntimeError('Missing '+name+' copyright file')
