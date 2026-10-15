@@ -255,7 +255,7 @@ std::vector<PhenoReader::PhenoRecord> PhenoReader::loadAllRecords(const std::str
             // load() keeps NAN in map but align() might use it.
             // Let's keep NAN to maintain record count if needed, but usually we drop missing for VCE.
             // Let's keep it consistent with load().
-            records.push_back({fid, iid, val, line_num});
+            records.push_back({fid, iid, val, NAN, line_num});
         }
     }
     
