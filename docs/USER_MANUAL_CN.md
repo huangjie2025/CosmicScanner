@@ -14,7 +14,7 @@ macOS 软件包：Apple 芯片 arm64 / Intel x86_64；macOS 15 或更新
 
 本手册面向首次使用 CosmicScanner 的遗传育种与关联分析研究者，说明软件获取、安装、数据准备、模型选择、分析操作和结果核对。先完成第4章随包示例，再按照第5章选择适合研究设计的模块。
 
-本手册适用于 CosmicScanner v2.0.0。命令示例分别采用 Linux Bash 和 Windows PowerShell；请使用与操作系统匹配的程序包，并保留包内目录结构。
+本手册适用于 CosmicScanner v2.0.0。命令示例采用 Linux 或 macOS 终端，以及 Windows PowerShell；请使用与操作系统匹配的程序包，并保留包内目录结构。
 
 ## 目录
 
@@ -81,55 +81,106 @@ CosmicScanner 是用于基因组关联分析和关系矩阵计算的命令行软
 
 ## 第2章 安装与运行
 
-### 2.1 获取与核验程序包
+### 2.1 选择程序包与核验文件
 
-获取与本手册匹配的 v2.0.0 平台程序包及 SHA-256 校验文件。保存 PACKAGE_ID.json，便于核对程序构建信息和复现分析。
+按操作系统和处理器选择下表中的程序包，同时下载同名 .sha256 校验文件。四种包均包含程序、配套运行库、示例数据和使用说明。分析程序本身不需要 Python、Conda、Homebrew 或编译器；只有可选自检脚本需要 Python 3。
 
-Linux 程序包名称为 CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz；Windows 包名称为 CosmicScanner-v2.0.0-windows-x86_64.zip。下列命令中的文件名应与实际下载文件一致。
+| 平台 | 程序包名称 |
+|---|---|
+| Linux x86-64 | CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz |
+| Windows x86-64 | CosmicScanner-v2.0.0-windows-x86_64.zip |
+| macOS Apple 芯片 | CosmicScanner-v2.0.0-macos-arm64.tar.gz |
+| macOS Intel 芯片 | CosmicScanner-v2.0.0-macos-x86_64.tar.gz |
+
+Linux 要求 glibc 2.34 或更新；Windows 建议 Windows 10 1903 或更新的64位系统；macOS 要求15或更新。Windows ARM64、Linux ARM64 和32位系统没有对应原生程序包。Apple 芯片用户选择 arm64，不需要使用 Intel 版本。
+
+Linux 在下载文件所在目录核验：
 
 ```bash
 sha256sum -c CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz.sha256
 ```
 
-```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip
+macOS 使用系统自带 shasum。以下为 Apple 芯片包；Intel 用户将文件名中的 arm64 替换为 x86_64：
+
+```bash
+shasum -a 256 -c CosmicScanner-v2.0.0-macos-arm64.tar.gz.sha256
 ```
 
-Windows 将输出值与官方同名校验文件比较。校验不一致时重新下载，不继续分析。不要只复制单个 exe 或 Linux 主程序；启动器、依赖库和示例应作为完整目录保存。
+显示 OK 表示下载内容与校验文件一致。Windows 在 PowerShell 中计算校验值，并与同名 .sha256 文件的第一列比较：
+
+```powershell
+Get-FileHash -Algorithm SHA256 -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip
+Get-Content -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip.sha256
+```
+
+校验值不区分字母大小写。若不一致，重新获取程序包与配套校验文件。保存 PACKAGE_ID.json 和压缩包校验值，便于记录实际使用的构建。
 
 ### 2.2 Linux 安装与首次运行
 
-解压后进入包根目录，调用 bin/cosmicscanner。直接运行程序包不需要安装 Python、Conda 或编译器。
+在选定的软件目录解压，进入解压生成的程序包根目录：
 
 ```bash
 tar -xzf CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz
-# 进入解压生成的目录后运行
+cd CosmicScanner-v2.0.0-validation-linux-x86_64
 ./bin/cosmicscanner --version
 ./bin/cosmicscanner --help
 ```
 
-包内启动器负责加载随包依赖。若出现 glibc 版本不足，应更换满足要求的系统或采用经核验的源码构建方案，不要直接替换系统核心库。
+保留 bin、lib、libexec 等包内目录及启动脚本，不要只移动主程序。启动器负责加载配套依赖。若出现 glibc 版本不足，换用符合要求的系统，或按该版本源码构建说明编译；不要替换系统核心库。
 
 ### 2.3 Windows 安装与首次运行
 
-将整个 ZIP 解压到有足够空间的目录，例如 E 盘的软件目录，在该目录打开 PowerShell。直接从压缩包预览界面运行，可能导致依赖库缺失。
+将 ZIP 保存并解压到自己选择的目录，例如 E 盘的软件目录。不要在压缩包预览界面直接运行。以下命令在 ZIP 所在目录的 PowerShell 中执行：
 
 ```powershell
+Expand-Archive -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip -DestinationPath .
+Set-Location .\CosmicScanner-v2.0.0-windows-x86_64
 & '.\bin\cosmicscanner.exe' --version
 & '.\bin\cosmicscanner.exe' --help
 ```
 
-PowerShell 运行路径变量或带引号的可执行文件路径时需要调用运算符 &。含空格的输入和输出路径必须加引号；不需要为了运行软件把数据复制到 C 盘。
+bin 内的 DLL 必须与 exe 一起保留。PowerShell 调用路径变量或带引号的程序路径时使用 &；含空格的文件路径要加引号。软件和数据均可放在选定磁盘，不需要复制到 C 盘。若目标目录已存在，先保留旧版及其运行记录，再为新包选择独立目录。
 
-### 2.4 从源码构建
+### 2.4 macOS 安装与首次运行
 
-源码构建适合开发者和需要特定平台支持的用户。应获取与主项目匹配的 libCosmicCore、匹配的第三方依赖及完整构建说明，再按该版本的 NATIVE_INSTALL_CN.md 操作。孤立下载主目录或混用不同 Core 版本会造成编译或行为差异。
+在“关于本机”查看芯片类型：Apple M 系列使用 arm64，Intel 处理器使用 x86_64。以下为 Apple 芯片操作；Intel 用户将两处 arm64 替换为 x86_64。
 
-源码构建得到的常见程序位置为 ./build/cosmicscanner；源码示例位置为 examples/data/r33_synthetic/dataset。程序包使用 ./bin/cosmicscanner 和 examples/dataset。两组路径不要混用。构建后先运行第4章示例，确认程序能够读取数据并输出预期结果。
+```bash
+tar -xzf CosmicScanner-v2.0.0-macos-arm64.tar.gz
+cd CosmicScanner-v2.0.0-macos-arm64
+./bin/cosmicscanner --version
+./bin/cosmicscanner --help
+```
 
-### 2.5 命令组织与帮助
+完整保留 bin 和 lib，程序会加载包内的 libomp.dylib。出现“bad CPU type”时，检查处理器架构与下载包是否对应。出现“Permission denied”时，先确认已完整解压到可执行文件的本地目录，并检查 bin/cosmicscanner 是否保留执行权限。
 
-推荐命令顺序为任务、模型、输入、模型专用参数、资源和输出。任务词 gwas 与 grm 用于提高可读性，原有平铺命令仍可使用。
+当前 macOS 包采用临时签名，尚未做 Apple Developer ID 签名与公证。通过浏览器下载后，系统可能提示无法验证开发者。确认下载来源和 SHA-256 后，按系统设置中的“隐私与安全性”对该程序进行处理，操作说明见 Apple 官方支持：https://support.apple.com/en-ie/102445。云端运行通过不能代替这一下载后的系统检查。
+
+macOS 可使用第4.2节的完整终端命令，参数与 Linux 相同。
+
+### 2.5 运行随包自检
+
+首次使用、升级版本或更换计算机后，先按第4章运行四条示例。若已安装 Python 3，也可在程序包根目录运行随包自检；该脚本只使用 Python 标准库。
+
+Linux 和 macOS：
+
+```bash
+python3 test/verify_native_package.py
+```
+
+Windows：
+
+```powershell
+python test/verify_native_package.py
+```
+
+成功时最后输出包含 status 为 PASS、lmm、mv、rep 各180个位点，以及 grm_samples 为60的记录，并给出自检结果目录。输出目录位于系统临时目录，不会覆盖自己的研究结果。未安装 Python 时，直接使用第4章命令即可，无需为常规分析安装 Python。
+
+若自检失败，先检查系统版本、处理器架构、文件完整性和程序包目录。保存完整命令与错误信息，并附上 PACKAGE_ID.json 中的版本信息联系开发者。自检验证的是随包合成示例，自己的数据仍需检查 ID 匹配、缺失、协变量、拟合及结果数量。
+
+### 2.6 命令组织与帮助
+
+推荐顺序为任务、模型、输入、模型专用参数、资源和输出。gwas 与 grm 用于明确任务，原有平铺命令仍可使用。
 
 ```text
 cosmicscanner gwas --model lmm --bfile PREFIX --pheno FILE --out PREFIX
@@ -139,7 +190,13 @@ cosmicscanner help input
 cosmicscanner --help-all
 ```
 
---model 选择模型家族；--gwas-model 选择单性状内部效应结构；--scan-tier 选择逐位点方差处理策略。三个参数分别控制模型、效应结构和计算策略。常用参数见附录A；输入与组合要求见第5章。
+在实际终端中，将 cosmicscanner 替换为本平台的程序路径。--model 选择模型家族；--gwas-model 选择单性状内部效应结构；--scan-tier 选择逐位点方差处理策略。完整帮助见附录A，中文常用参数索引见附录B。
+
+### 2.7 从源码构建
+
+源码构建适合开发者和需要自定义构建的用户。获取与主项目匹配的 libCosmicCore、第三方依赖和完整构建说明。仅下载主目录或混用不同 Core 版本，可能导致编译失败或行为差异。
+
+源码构建的常见程序位置为 ./build/cosmicscanner，源码示例在 examples/data/r33_synthetic/dataset。平台程序包使用 ./bin/cosmicscanner 和 examples/dataset。请按获取方式选用对应路径，构建后同样运行第4章示例。
 
 ## 第3章 输入文件格式
 
@@ -229,9 +286,9 @@ GRM 的二进制矩阵必须配套其 ID 文件，不能在矩阵生成后单独
 
 本章命令从完整程序包根目录运行。examples/dataset 中包含60个个体、180个 SNP、两条染色体的合成数据，以及单性状、多性状和重复测量表型。示例用于验证程序与流程，不用于证明真实研究效应或性能。
 
-Linux 和 Windows 各有自己的终端语法。不要把 Bash 的反斜杠续行和变量赋值直接复制到 PowerShell。每次开启新终端，应重新设置 BIN 和 DATA。
+Linux/macOS 与 Windows 使用不同的终端语法。不要把 Bash 的反斜杠续行和变量赋值直接复制到 PowerShell。每次开启新终端，应重新设置 BIN 和 DATA。
 
-### 4.2 Linux 完整操作
+### 4.2 Linux 与 macOS 完整操作
 
 
 
@@ -303,7 +360,7 @@ New-Item -ItemType Directory -Force demo_results | Out-Null
 
 ### 4.4 成功判据与下一步
 
-首先检查程序退出状态；Linux 可在命令执行后立即查看 echo $?，PowerShell 可立即查看 $LASTEXITCODE。0表示程序正常结束，还需检查结果文件、有效样本量、位点数、收敛和有限数值。不要用下一条命令覆盖退出状态后再查询。
+首先检查程序退出状态；Linux/macOS 可在命令执行后立即查看 echo $?，PowerShell 可立即查看 $LASTEXITCODE。0表示程序正常结束，还需检查结果文件、有效样本量、位点数、收敛和有限数值。不要用下一条命令覆盖退出状态后再查询。
 
 示例的三个关联表均应有180条数据记录，GRM ID 应有60行。单性状统一关联表使用 P_A，多性状和重复力表使用各自字段，不能按同一个 P 列强行解析。180与60仅是随包合成数据的核对值，自己的数据受缺失和过滤影响。
 
@@ -605,7 +662,7 @@ Manhattan 图展示位置与负对数 P 值，QQ 图比较观测和参考分布�
 
 ### 6.4 下载与文档版本核对
 
-选择与操作系统匹配的下载包，核对版本、SHA-256 和 PACKAGE_ID.json。升级程序时同时更新手册与示例数据。macOS 用户请先确认下载页是否提供对应架构的软件包。
+选择与操作系统匹配的下载包，核对版本、SHA-256 和 PACKAGE_ID.json。升级程序时同时更新手册与示例数据。macOS 用户按芯片选择 arm64 或 x86_64 包；安装和系统安全提示处理见第2.4节。
 
 ## 第7章 输出文件说明
 
@@ -670,7 +727,7 @@ Manhattan 图展示位置与负对数 P 值，QQ 图比较观测和参考分布�
 | 找不到 BED 或表型 | 当前目录错误或前缀带错后缀 | 检查完整路径，--bfile 不加 .bed |
 | 含空格路径失败 | 路径未加引号 | 为输入、输出和程序路径加引号 |
 | 无法写出结果 | 父目录不存在或权限不足 | 先创建目录并使用可写位置 |
-| Mac 无法运行现有包 | 下载包与系统不匹配 | 使用下载页列出的对应平台程序 |
+| Mac 无法运行现有包 | 系统版本、处理器架构或运行权限不匹配 | 选择对应芯片的 macOS 15 或更新系统程序包，按第2.4节排查 |
 
 ### 8.2 输入与模型问题
 

@@ -1,0 +1,44 @@
+name: Packaged manuals and macOS final verification
+on:
+  push:
+    branches: [codex/manual-platforms-20261015]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download verified binary package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 38678035126 --repo "$GITHUB_REPOSITORY" --name "CosmicScanner-macos-${{ matrix.arch }}" --dir "$RUNNER_TEMP/source"
+      - name: Include current manuals and verify final archive
+        run: python3 scripts/finalize_macos_package.py --input "$RUNNER_TEMP/source" --out "$RUNNER_TEMP/final" --source-run 38678035126
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: CosmicScanner-macos-${{ matrix.arch }}-manuals
+          path: |
+            ${{ runner.temp }}/final/*.tar.gz
+            ${{ runner.temp }}/final/*.sha256
+            ${{ runner.temp }}/final/*.json
+            ${{ runner.temp }}/final/*.txt
+            ${{ runner.temp }}/final/cosmicscanner-native-demo-*/**
+          if-no-files-found: error
