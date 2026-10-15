@@ -47,13 +47,13 @@
 #include "association/meta/meta_engine.h"
 #include "association/fine_mapping/fine_mapping.h"
 
-extern "C" {
 #if defined(__APPLE__)
-    void openblas_set_num_threads(int num_threads) __attribute__((weak_import));
+#include <dlfcn.h>
 #else
+extern "C" {
     void openblas_set_num_threads(int num_threads) __attribute__((weak));
-#endif
 }
+#endif
 
 #ifndef COSMICSCANNER_VERSION
 #define COSMICSCANNER_VERSION "unknown"
@@ -119,9 +119,14 @@ static std::vector<int> subject_multivariate_columns(const std::string& pheno_fi
 }
 
 static void set_blas_threads(int num_threads) {
-    if (openblas_set_num_threads) {
-        openblas_set_num_threads(num_threads);
+#if defined(__APPLE__)
+    using SetThreads = void (*)(int);
+    if (auto set_threads = reinterpret_cast<SetThreads>(dlsym(RTLD_DEFAULT, "openblas_set_num_threads"))) {
+        set_threads(num_threads);
     }
+#else
+    if (openblas_set_num_threads) openblas_set_num_threads(num_threads);
+#endif
 }
 
 static std::string planner_model_label(const cosmic::GwasConfig& cfg) {

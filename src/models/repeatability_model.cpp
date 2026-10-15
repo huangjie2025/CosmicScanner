@@ -28,13 +28,13 @@
 #include "eigen_vce.h"
 #include "lmm_engine.h"
 
-extern "C" {
 #if defined(__APPLE__)
-    void openblas_set_num_threads(int num_threads) __attribute__((weak_import));
+#include <dlfcn.h>
 #else
+extern "C" {
     void openblas_set_num_threads(int num_threads) __attribute__((weak));
-#endif
 }
+#endif
 
 namespace cosmic {
 
@@ -202,7 +202,14 @@ static int drop_aliased_fixed_effects(Eigen::MatrixXf& X, FixedDesignG& fd) {
 }
 
 static void set_blas_threads(int n) {
+#if defined(__APPLE__)
+    using SetThreads = void (*)(int);
+    if (auto set_threads = reinterpret_cast<SetThreads>(dlsym(RTLD_DEFAULT, "openblas_set_num_threads"))) {
+        set_threads(n);
+    }
+#else
     if (openblas_set_num_threads) openblas_set_num_threads(n);
+#endif
 }
 
 static double gamma_q(double a, double x) {

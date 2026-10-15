@@ -27,8 +27,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install build tools
-        run: brew install cmake eigen libomp
+        run: brew install cmake eigen libomp ccache
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: macos-ccache-${{ matrix.arch }}-${{ github.sha }}
+          restore-keys: macos-ccache-${{ matrix.arch }}-
       - name: Build, verify and package
+        env:
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/cosmicscanner"

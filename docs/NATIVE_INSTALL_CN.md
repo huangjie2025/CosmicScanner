@@ -1,6 +1,5 @@
 # CosmicScanner v2.0.0 平台安装与入门
-更新：2026-10-14。当前为验收材料，尚未签署稳定发布或公开下载。
-Linux/Windows已有可运行包；macOS包仍需原生构建和验收。
+本说明适用于 v2.0.0 平台程序包。各包的构建与验收信息见 PACKAGE_ID.json 及随附记录。
 
 ## Windows x86-64
 将整个ZIP解压到自己选择的目录。不要只复制EXE：bin内的DLL必须保留。
@@ -27,12 +26,21 @@ mkdir -p demo_results
 ~~~
 示例应生成180个SNP结果。当前可移植包要求glibc>=2.34，暂未承诺全部Linux发行版。
 
-## macOS：待完成验收
-需分别选择Apple芯片arm64和Intel芯片x86_64包，不能互相当作原生包。
-当前已准备原生构建/自检流水线，但还没有经过Mac实机验收的可下载包。
-目标首轮验收环境为macOS 15；更早系统尚未验收。
-未来成功验收的包使用./bin/cosmicscanner，命令参数与Linux相同。
-临时签名不等于Apple Developer ID签名或公证，发布页必须如实标明。
+## macOS Apple 芯片 / Intel 芯片
+系统要求：macOS 15 或更新。Apple 芯片选择 arm64 包，Intel 芯片选择 x86_64 包。
+解压整个 tar.gz，保留 bin 和 lib。进入解压目录后运行：
+~~~bash
+./bin/cosmicscanner --version
+./bin/cosmicscanner --help
+mkdir -p demo_results
+./bin/cosmicscanner gwas --model lmm --bfile examples/dataset/synth --pheno examples/dataset/quantitative.pheno --mpheno 1 --threads 1 --out demo_results/lmm
+wc -l demo_results/lmm.assoc.txt
+~~~
+应得到 181 行（表头加 180 个 SNP）。运行软件无需 Homebrew、Conda、Python 或编译器。
+可选自检需要 Python 3：python3 test/verify_native_package.py。
+若提示 CPU 架构不匹配，重新选择对应芯片的软件包。
+当前采用临时签名，尚未完成 Apple Developer ID 签名与公证；系统可能显示安全提示。
+包内 PACKAGE_ID.json 和随附验收记录用于核对构建版本及测试范围。
 
 ## 输出、模型和正式范围
 --mpheno从FID/IID之后的第一列表型开始计数。
