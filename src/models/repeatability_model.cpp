@@ -29,7 +29,11 @@
 #include "lmm_engine.h"
 
 extern "C" {
+#if defined(__APPLE__)
+    void openblas_set_num_threads(int num_threads) __attribute__((weak_import));
+#else
     void openblas_set_num_threads(int num_threads) __attribute__((weak));
+#endif
 }
 
 namespace cosmic {
