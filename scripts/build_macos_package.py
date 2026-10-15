@@ -35,13 +35,13 @@ def main():
     for name,source in [('zlib',work/'zlib-1.3.2/LICENSE'),('zstd',work/'zstd-1.5.7/LICENSE')]:
         if not source.exists():raise RuntimeError('Missing '+name+' copyright file')
         shutil.copy2(source,legal/(name+'.txt'))
-    for name,prefix in [('eigen',args.eigen.resolve().parents[1]),('libomp',args.libomp_prefix.resolve())]:
-        candidates=list(prefix.glob('*COPYING*'))+list(prefix.glob('*LICENSE*'))+list(prefix.glob('share/**/LICENSE*'))
+    for name,license_prefix in [('eigen',args.eigen.resolve().parents[1]),('libomp',args.libomp_prefix.resolve())]:
+        candidates=list(license_prefix.glob('*COPYING*'))+list(license_prefix.glob('*LICENSE*'))+list(license_prefix.glob('share/**/LICENSE*'))
         if not candidates:raise RuntimeError('Missing '+name+' license; install full dependency with licenses')
         for i,source in enumerate(candidates):
             if source.is_file():shutil.copy2(source,legal/(name+'-'+str(i)+'-'+source.name))
-    if not (prefix/'lib/libzs.a').is_file():raise RuntimeError('Static zlib archive was not installed')
-    flags=['-DCMAKE_BUILD_TYPE=Release','-DCOSMICSCANNER_BUILD_TESTS=OFF','-DCMAKE_DISABLE_FIND_PACKAGE_BLAS=TRUE','-DCMAKE_DISABLE_FIND_PACKAGE_LAPACK=TRUE','-DCMAKE_PREFIX_PATH='+str(prefix),'-DEIGEN3_INCLUDE_DIR='+str(args.eigen.resolve()),'-DZLIB_LIBRARY='+str(prefix/'lib/libzs.a'),'-DZLIB_INCLUDE_DIR='+str(prefix/'include'),'-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp','-DOpenMP_CXX_LIB_NAMES=omp','-DOpenMP_omp_LIBRARY='+str(args.libomp_prefix/'lib/libomp.dylib'),'-DCMAKE_CXX_FLAGS=-I'+str(args.libomp_prefix/'include'),'-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0']
+    if not (prefix/'lib/libz.a').is_file():raise RuntimeError('Static zlib archive was not installed')
+    flags=['-DCMAKE_BUILD_TYPE=Release','-DCOSMICSCANNER_BUILD_TESTS=OFF','-DCMAKE_DISABLE_FIND_PACKAGE_BLAS=TRUE','-DCMAKE_DISABLE_FIND_PACKAGE_LAPACK=TRUE','-DCMAKE_PREFIX_PATH='+str(prefix),'-DEIGEN3_INCLUDE_DIR='+str(args.eigen.resolve()),'-DZLIB_LIBRARY='+str(prefix/'lib/libz.a'),'-DZLIB_INCLUDE_DIR='+str(prefix/'include'),'-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp','-DOpenMP_CXX_LIB_NAMES=omp','-DOpenMP_omp_LIBRARY='+str(args.libomp_prefix/'lib/libomp.dylib'),'-DCMAKE_CXX_FLAGS=-I'+str(args.libomp_prefix/'include'),'-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0']
     subprocess.run(['cmake','-S',str(root),'-B',str(work/'build'),*flags],env=env,check=True)
     subprocess.run(['cmake','--build',str(work/'build'),'--target','cosmicscanner','-j2'],env=env,check=True)
     subprocess.run([sys.executable,str(root/'tests/run_cli_regressions.py'),'--bin',str(work/'build/cosmicscanner'),'--out',str(work/'cli-checks')],env=env,check=True)
