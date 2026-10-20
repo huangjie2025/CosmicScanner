@@ -29,6 +29,10 @@ def sha(path):
 
 
 def capture(command):
+    if command[0] == 'git' and platform.system() == 'Windows':
+        # Checkout uses Git for Windows; MSYS2 Git has different global EOL
+        # and executable-bit defaults. Compare content with checkout semantics.
+        command = ['git', '-c', 'core.autocrlf=true', '-c', 'core.filemode=false', *command[1:]]
     return subprocess.check_output(list(map(str, command)), cwd=ROOT, text=True,
                                    encoding='utf-8', errors='replace').strip()
 
@@ -57,8 +61,9 @@ def main():
     commit = capture(['git', 'rev-parse', 'HEAD'])
     if os.environ.get('GITHUB_SHA', commit) != commit:
         raise RuntimeError('Checkout does not match the triggering source commit')
-    if capture(['git', 'status', '--porcelain', '--untracked-files=no']):
-        raise RuntimeError('Tracked checkout is modified before building')
+    dirty = capture(['git', 'status', '--porcelain', '--untracked-files=no'])
+    if dirty:
+        raise RuntimeError('Tracked checkout is modified before building:\n'+dirty)
     inventory = {'Windows': ['pacman', '-Q'], 'Darwin': ['brew', 'list', '--versions'],
                  'Linux': ['dpkg-query', '-W']}[system]
     identity = {

@@ -7,6 +7,7 @@
 #include <omp.h>
 #include <vector>
 #include <algorithm>
+#include <numeric>
 #include <iomanip>
 #include <sstream>
 
