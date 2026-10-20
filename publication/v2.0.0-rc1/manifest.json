@@ -1,0 +1,59 @@
+{
+  "tag": "v2.0.0-rc1",
+  "source_commit": "e80062ae31942dc518b8a13110c509470bfe7421",
+  "title": "CosmicScanner v2.0.0-rc1",
+  "prerelease": true,
+  "make_latest": false,
+  "assets": [
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-windows-x86_64.zip",
+      "sha256": "107fc1b0407a501ad86b1f803ae971b89cb6914d569b651ad346f073f8c06749",
+      "bytes": 13141192
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-windows-x86_64.zip.sha256",
+      "sha256": "a092c9698efcf026b22916564d201c7cd427f3f4151ba0885b4ec06f21ed3253",
+      "bytes": 111
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-linux-x86_64.tar.gz",
+      "sha256": "1c6206ba86b00205c16e8b13a84da58b83d4cfa52d0886f9e81816a14a2b1f4f",
+      "bytes": 13734624
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-linux-x86_64.tar.gz.sha256",
+      "sha256": "8d31a02eb2f605a68c19802efbd60f8be8e6f8999835834e28306cd918bc18b8",
+      "bytes": 112
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-macos-arm64.tar.gz",
+      "sha256": "1281f6271e961e46b28adc207c45027fe238cd560647ce9e81cf0c5c356ab9df",
+      "bytes": 3443196
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-macos-arm64.tar.gz.sha256",
+      "sha256": "3bac271b15386d142b71a2ebc828e190f19fc320258136b5fd3ecf94496bfde7",
+      "bytes": 111
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-macos-x86_64.tar.gz",
+      "sha256": "5d8f41e48242a0c809445991295dd738073d2cec003a1dc67efa6560943891b6",
+      "bytes": 4023447
+    },
+    {
+      "name": "CosmicScanner-v2.0.0-rc1-macos-x86_64.tar.gz.sha256",
+      "sha256": "d9b177bfc93825668797ac1c4c48ff0dc5cfb2d4d41338bc169a138bcb2f3406",
+      "bytes": 112
+    },
+    {
+      "name": "release.json",
+      "sha256": "049bd1172509b804f644a35b9bd707640515168ead45af68b38cdc2c76df7c65",
+      "bytes": 6799
+    },
+    {
+      "name": "SHA256SUMS",
+      "sha256": "32b085ff9bb2f7cf8648b01d68351538d2ebae61834ec20df97e4f4047b6ae56",
+      "bytes": 446
+    }
+  ]
+}

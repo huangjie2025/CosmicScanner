@@ -1,0 +1,31 @@
+name: Publish verified CosmicScanner RC1 distribution
+on:
+  push:
+    branches: [codex/v2.0.0-rc1-publication-20261020]
+    paths:
+      - 'publication/v2.0.0-rc1/assets/**'
+permissions:
+  contents: write
+concurrency:
+  group: cosmicscanner-v2-rc1-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'huangjie2025/CosmicScanner'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify, upload, download and publish the pre-release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 publication/v2.0.0-rc1/publish_release.py
+      - name: Save release verification receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: v2.0.0-rc1-publication-verification
+          path: publication/v2.0.0-rc1/published-release.json
+          if-no-files-found: ignore
