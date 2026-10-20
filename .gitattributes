@@ -1,0 +1,18 @@
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+CMakeLists.txt text eol=lf
+*.cmake text eol=lf
+
+# Genotype, matrix and distribution files must retain their original bytes.
+*.bed binary
+*.pgen binary
+*.bgen binary
+*.bin binary
+*.docx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.zip binary
+*.gz binary
