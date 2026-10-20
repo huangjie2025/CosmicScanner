@@ -40,7 +40,7 @@ jobs:
       OPENBLAS_NUM_THREADS: '1'
       MKL_NUM_THREADS: '1'
       PYTHONUTF8: '1'
-      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ci-ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_COMPILERCHECK: content
       CCACHE_MAXSIZE: 300M
@@ -79,7 +79,7 @@ jobs:
       - name: Restore compiler cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/ccache
+          path: ${{ github.workspace }}/.ci-ccache
           key: ci-ccache-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ci-ccache-${{ matrix.platform }}-${{ matrix.arch }}-
       - name: Build and verify Windows
