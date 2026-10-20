@@ -68,7 +68,7 @@ def main():
                  'Linux': ['dpkg-query', '-W']}[system]
     identity = {
         'schema': 1, 'source_commit': commit,
-        'source_tree': capture(['git', 'rev-parse', 'HEAD^{tree}']),
+        'source_tree': capture(['git', 'show', '-s', '--format=%T', 'HEAD']),
         'source_repository': os.environ.get('GITHUB_REPOSITORY', 'local'),
         'source_ref': os.environ.get('GITHUB_REF', 'local'),
         'workflow': os.environ.get('GITHUB_WORKFLOW_REF', 'local'),
@@ -136,7 +136,7 @@ def main():
             for index, path in enumerate(paths):
                 shutil.copy2(path, legal/(name+'-'+str(index)+'-'+path.name))
     build = work/'build'
-    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DCOSMICSCANNER_BUILD_TESTS=OFF',
+    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache', '-DCOSMICSCANNER_BUILD_TESTS=OFF',
              '-DCMAKE_DISABLE_FIND_PACKAGE_BLAS=TRUE', '-DCMAKE_DISABLE_FIND_PACKAGE_LAPACK=TRUE',
              '-DCMAKE_PREFIX_PATH='+str(prefix), '-DEIGEN3_INCLUDE_DIR='+str(args.eigen.resolve()),
              '-DZLIB_USE_STATIC_LIBS=ON', '-DZLIB_INCLUDE_DIR='+str(prefix/'include')]
