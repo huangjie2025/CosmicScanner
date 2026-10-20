@@ -60,6 +60,8 @@ macOS requires version 15 or later and retains the original ad-hoc signature, wi
 - Executable version: `2.0.0`.
 - Candidate-manifest reference revision: `e80062ae31942dc518b8a13110c509470bfe7421`.
 - Packaging revision: `rc1-consistent-distribution-20261019`.
+- GitHub publication date: `2026-10-20`.
+- The source tag includes the candidate source plus the updated manuals, examples, citation metadata and release documentation. No C++ source or build configuration was changed in this documentation update; the original candidate reference remains recorded separately in the distribution manifest and package identities.
 - Original candidate date: `2026-10-15`; normalized distribution date: `2026-10-19`.
 
 The reference revision comes from the supplied candidate manifest. Original platform build metadata are preserved separately in each archive. The macOS packages record workflow run `38678035126`, whose public head is `86dce9681ba31e22de72c2b771f1d38e1b5d2a31`; the reference revision follows it with documentation and packaging changes only. A public workflow record is not an independent byte-for-byte reconstruction of the binary, and this packaging pass did not reproduce every platform build.

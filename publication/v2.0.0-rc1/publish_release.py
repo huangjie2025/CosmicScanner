@@ -26,7 +26,8 @@ class SafeRedirects(HTTPRedirectHandler):
 def local_checks():
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["tag"] == "v2.0.0-rc1"
-    assert manifest["source_commit"] == "e80062ae31942dc518b8a13110c509470bfe7421"
+    assert manifest["source_commit"] == "f4624ff86c2b426298306a06cfd011a831c079a3"
+    assert manifest["candidate_reference_commit"] == "e80062ae31942dc518b8a13110c509470bfe7421"
     assert manifest["prerelease"] is True and manifest["make_latest"] is False
     names = [asset["name"] for asset in manifest["assets"]]
     assert len(names) == len(set(names)) == 10
@@ -126,6 +127,7 @@ def main():
     assert {entry["name"] for entry in published["assets"]} == expected_names
     receipt = {"status": "PASS", "repository": REPOSITORY, "tag": tag,
                "source_commit": manifest["source_commit"],
+               "candidate_reference_commit": manifest["candidate_reference_commit"],
                "release_id": published["id"], "url": published["html_url"],
                "draft": published["draft"], "prerelease": published["prerelease"],
                "verification": "All 10 uploaded assets downloaded and SHA-256 matched before publication",

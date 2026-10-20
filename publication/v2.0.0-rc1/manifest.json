@@ -1,6 +1,6 @@
 {
   "tag": "v2.0.0-rc1",
-  "source_commit": "e80062ae31942dc518b8a13110c509470bfe7421",
+  "source_commit": "f4624ff86c2b426298306a06cfd011a831c079a3",
   "title": "CosmicScanner v2.0.0-rc1",
   "prerelease": true,
   "make_latest": false,
@@ -55,5 +55,6 @@
       "sha256": "32b085ff9bb2f7cf8648b01d68351538d2ebae61834ec20df97e4f4047b6ae56",
       "bytes": 446
     }
-  ]
+  ],
+  "candidate_reference_commit": "e80062ae31942dc518b8a13110c509470bfe7421"
 }
