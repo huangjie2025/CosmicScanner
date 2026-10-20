@@ -87,30 +87,30 @@ CosmicScanner 是用于基因组关联分析和关系矩阵计算的命令行软
 
 | 平台 | 程序包名称 |
 |---|---|
-| Linux x86-64 | CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz |
-| Windows x86-64 | CosmicScanner-v2.0.0-windows-x86_64.zip |
-| macOS Apple 芯片 | CosmicScanner-v2.0.0-macos-arm64.tar.gz |
-| macOS Intel 芯片 | CosmicScanner-v2.0.0-macos-x86_64.tar.gz |
+| Linux x86-64 | CosmicScanner-v2.0.0-rc1-linux-x86_64.tar.gz |
+| Windows x86-64 | CosmicScanner-v2.0.0-rc1-windows-x86_64.zip |
+| macOS Apple 芯片 | CosmicScanner-v2.0.0-rc1-macos-arm64.tar.gz |
+| macOS Intel 芯片 | CosmicScanner-v2.0.0-rc1-macos-x86_64.tar.gz |
 
 Linux 要求 glibc 2.34 或更新；Windows 建议 Windows 10 1903 或更新的64位系统；macOS 要求15或更新。Windows ARM64、Linux ARM64 和32位系统没有对应原生程序包。Apple 芯片用户选择 arm64，不需要使用 Intel 版本。
 
 Linux 在下载文件所在目录核验：
 
 ```bash
-sha256sum -c CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz.sha256
+sha256sum -c CosmicScanner-v2.0.0-rc1-linux-x86_64.tar.gz.sha256
 ```
 
 macOS 使用系统自带 shasum。以下为 Apple 芯片包；Intel 用户将文件名中的 arm64 替换为 x86_64：
 
 ```bash
-shasum -a 256 -c CosmicScanner-v2.0.0-macos-arm64.tar.gz.sha256
+shasum -a 256 -c CosmicScanner-v2.0.0-rc1-macos-arm64.tar.gz.sha256
 ```
 
 显示 OK 表示下载内容与校验文件一致。Windows 在 PowerShell 中计算校验值，并与同名 .sha256 文件的第一列比较：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip
-Get-Content -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip.sha256
+Get-FileHash -Algorithm SHA256 -LiteralPath CosmicScanner-v2.0.0-rc1-windows-x86_64.zip
+Get-Content -LiteralPath CosmicScanner-v2.0.0-rc1-windows-x86_64.zip.sha256
 ```
 
 校验值不区分字母大小写。若不一致，重新获取程序包与配套校验文件。保存 PACKAGE_ID.json 和压缩包校验值，便于记录实际使用的构建。
@@ -120,8 +120,8 @@ Get-Content -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip.sha256
 在选定的软件目录解压，进入解压生成的程序包根目录：
 
 ```bash
-tar -xzf CosmicScanner-v2.0.0-validation-linux-x86_64.tar.gz
-cd CosmicScanner-v2.0.0-validation-linux-x86_64
+tar -xzf CosmicScanner-v2.0.0-rc1-linux-x86_64.tar.gz
+cd CosmicScanner-v2.0.0-rc1-linux-x86_64
 ./bin/cosmicscanner --version
 ./bin/cosmicscanner --help
 ```
@@ -133,8 +133,8 @@ cd CosmicScanner-v2.0.0-validation-linux-x86_64
 将 ZIP 保存并解压到自己选择的目录，例如 E 盘的软件目录。不要在压缩包预览界面直接运行。以下命令在 ZIP 所在目录的 PowerShell 中执行：
 
 ```powershell
-Expand-Archive -LiteralPath CosmicScanner-v2.0.0-windows-x86_64.zip -DestinationPath .
-Set-Location .\CosmicScanner-v2.0.0-windows-x86_64
+Expand-Archive -LiteralPath CosmicScanner-v2.0.0-rc1-windows-x86_64.zip -DestinationPath .
+Set-Location .\CosmicScanner-v2.0.0-rc1-windows-x86_64
 & '.\bin\cosmicscanner.exe' --version
 & '.\bin\cosmicscanner.exe' --help
 ```
@@ -146,8 +146,8 @@ bin 内的 DLL 必须与 exe 一起保留。PowerShell 调用路径变量或带�
 在“关于本机”查看芯片类型：Apple M 系列使用 arm64，Intel 处理器使用 x86_64。以下为 Apple 芯片操作；Intel 用户将两处 arm64 替换为 x86_64。
 
 ```bash
-tar -xzf CosmicScanner-v2.0.0-macos-arm64.tar.gz
-cd CosmicScanner-v2.0.0-macos-arm64
+tar -xzf CosmicScanner-v2.0.0-rc1-macos-arm64.tar.gz
+cd CosmicScanner-v2.0.0-rc1-macos-arm64
 ./bin/cosmicscanner --version
 ./bin/cosmicscanner --help
 ```
@@ -300,8 +300,8 @@ DATA=examples/dataset
 mkdir -p demo_results
 
 # 单性状 LMM，默认 LOCO
-"$BIN" --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
-  --mpheno 1 --gwas --model lmm --threads 1 --out demo_results/lmm
+"$BIN" gwas --model lmm --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
+  --mpheno 1 --threads 1 --out demo_results/lmm
 
 # 三性状 native fixed-null
 "$BIN" gwas --model multivariate --bfile "$DATA/synth" \

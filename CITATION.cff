@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use CosmicScanner, please cite this software release. The manuscript is in preparation."
+title: "CosmicScanner: mixed-model genome-wide association analysis"
+type: software
+version: "2.0.0-rc1"
+date-released: "2026-10-20"
+authors:
+  - family-names: "Huang"
+    given-names: "Jie"
+    email: "huangjie2025@zju.edu.cn"
+license: MIT
+repository-code: "https://github.com/huangjie2025/CosmicScanner"
+url: "https://github.com/huangjie2025/CosmicScanner/releases/tag/v2.0.0-rc1"
+keywords:
+  - GWAS
+  - linear mixed model
+  - multivariate analysis
+  - repeated measurements

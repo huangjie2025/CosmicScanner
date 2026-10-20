@@ -1,14 +1,12 @@
-# CosmicScanner 统一命令行用户指南
+# CosmicScanner v2.0.0 命令行指南
 
-更新：2026-10-14。适用于包含统一 CLI 更新的 v2.0 开发源码；不代表 v2.0 正式包已发布。
-原始模型和支持等级以 `COSMICSCANNER_V2_SCOPE_FREEZE_PROPOSAL.md` 为准。接口更新不改变统计算法、输入编码、输出 schema 或数值默认值。
+安装和完整操作说明见中文用户手册。请按所选模型核对输入和输出字段。
 
 ## 1. 推荐命令结构
 
 保留 PLINK/GCTA 用户熟悉的长参数：输入 → 表型/协变量 → 任务/模型 → 计算设置 → 输出。
 
 ```bash
-cosmicscanner --bfile data --pheno trait.txt --gwas --model lmm --threads 4 --out results/run
 ```
 
 也可以使用等价的可选任务入口：
@@ -19,7 +17,7 @@ cosmicscanner grm --bfile data --threads 4 --out results/grm
 ```
 
 `gwas` 只补充 `--gwas`；`grm` 只补充 `--make-grm`。已有平铺命令继续支持。
-推荐每条关联分析命令都显式写 `--gwas` 或 `gwas`，不要依赖部分旧模型参数隐式启动分析。
+推荐新关联分析命令统一使用 `gwas --model`，不要依赖部分旧模型参数隐式启动分析。
 旧 `--model lmm/fixed-lmm/lmm-eb/eb-lmm` 在平铺脚本中的历史 EB 开关作用保留；旧脚本不用立即迁移。新任务入口会检查互相冲突的模型选择。
 
 ## 2. 安装和帮助
@@ -97,8 +95,8 @@ DATA=examples/data/r33_synthetic/dataset
 mkdir -p demo_results
 
 # 单性状 LMM，默认 LOCO
-"$BIN" --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
-  --mpheno 1 --gwas --model lmm --threads 1 --out demo_results/lmm
+"$BIN" gwas --model lmm --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
+  --mpheno 1 --threads 1 --out demo_results/lmm
 
 # 三性状 native fixed-null
 "$BIN" gwas --model multivariate --bfile "$DATA/synth" \

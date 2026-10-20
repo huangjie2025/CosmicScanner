@@ -1,23 +1,19 @@
-# CosmicScanner Unified CLI User Guide
+# CosmicScanner v2.0.0 Command Line Guide
 
-Updated 2026-10-14. Applies to v2.0 development sources containing this CLI update;
-it does not certify a public v2.0 release package. The scope contract remains
-`COSMICSCANNER_V2_SCOPE_FREEZE_PROPOSAL.md`. Algorithms, encoding, schemas and
-numerical defaults are unchanged.
+See the complete Chinese and English manuals for installation and examples. Check the input and output requirements of the selected model.
 
 ## Recommended structure
 
 Keep familiar PLINK/GCTA-style input/output flags and select a model explicitly:
 
 ```bash
-cosmicscanner --bfile data --pheno trait.txt --gwas --model lmm --threads 4 --out results/run
 cosmicscanner gwas --model lmm --bfile data --pheno trait.txt --threads 4 --out results/run
 cosmicscanner grm --bfile data --threads 4 --out results/grm
 ```
 
 `gwas` adds only `--gwas`; `grm` adds only `--make-grm`. Flat legacy commands remain
-supported. Always include `--gwas` or the `gwas` command in recommended association
-examples rather than relying on implicit behavior of some old model flags.
+supported. Use `gwas --model` for new association commands rather than relying
+on implicit behavior of some old model flags.
 Historical flat `--model lmm/fixed-lmm/lmm-eb/eb-lmm` modifiers retain their legacy
 EB-switch behavior, including existing scripts with another model flag. The new
 task entry checks conflicting model selections.
@@ -84,7 +80,7 @@ context-dependent. Raw-table adaptation `--time-col` is not an alias for `--tphe
 a single-trait family; it is distinct from `--model`.
 `--scan-tier approx|semi|exact` controls SNP variance treatment, not the model.
 Native multivariate semi is not implemented and is rejected. Explicit
-`--mv-compatible emmvgwas --scan-tier semi` uses a separate coding/null contract.
+`--mv-compatible emmvgwas --scan-tier semi` uses separate genotype-coding and null-model assumptions.
 Multivariate/repeatability tier exact requires no-LOCO; repeatability additionally
 requires BED and no record weights. Record mode exact and scan tier exact are
 different dimensions. Omitted tiers preserve historical behavior; native legacy
@@ -101,8 +97,8 @@ variants across two chromosomes. Reinitialize these Bash variables in each shell
 BIN=./build/cosmicscanner
 DATA=examples/data/r33_synthetic/dataset
 mkdir -p demo_results
-"$BIN" --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
-  --mpheno 1 --gwas --model lmm --threads 1 --out demo_results/lmm
+"$BIN" gwas --model lmm --bfile "$DATA/synth" --pheno "$DATA/quantitative.pheno" \
+  --mpheno 1 --threads 1 --out demo_results/lmm
 "$BIN" gwas --model multivariate --bfile "$DATA/synth" \
   --pheno "$DATA/multivariate.pheno" --mpheno-list 1,2,3 \
   --scan-tier approx --reml-maxit 1200 --reml-tol 1e-10 --no-loco \
