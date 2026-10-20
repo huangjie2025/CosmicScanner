@@ -1,8 +1,12 @@
 # CosmicScanner
 
+[![Build and regress](https://github.com/huangjie2025/CosmicScanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/huangjie2025/CosmicScanner/actions/workflows/ci.yml)
+
 CosmicScanner is a command-line toolkit for mixed-model genome-wide association analysis of continuous traits, correlated traits, and repeated measurements.
 
 **Current candidate: v2.0.0-rc1.** This is a release candidate for evaluation, not a stable release. Support depends on the model, input format, and analysis settings. Longitudinal random regression remains experimental.
+
+**[Download V2.0 RC1 for Windows, Linux and macOS](https://github.com/huangjie2025/CosmicScanner/releases/tag/v2.0.0-rc1)** · [Supported configurations](docs/SUPPORTED_MODES.md) · [Automatic builds and verification](docs/CONTINUOUS_INTEGRATION.md)
 
 ## Model support
 

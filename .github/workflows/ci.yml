@@ -1,0 +1,107 @@
+name: Build and regress
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.platform }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            platform: windows
+            arch: x86_64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x86_64
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@v6
+        if: runner.os != 'Windows'
+        with:
+          python-version: '3.12'
+      - name: Install Windows build tools
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-eigen3
+            mingw-w64-ucrt-x86_64-python
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libeigen3-dev patchelf
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja eigen libomp
+      - name: Build and verify Windows
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -o pipefail
+          work="$RUNNER_TEMP/cosmicscanner-ci"
+          mkdir -p "$work"
+          python scripts/ci_build.py --work "$work" --eigen "$(cygpath -m /ucrt64/include/eigen3)" --runtime-dir "$(cygpath -m /ucrt64/bin)" 2>&1 | tee "$work/build.log"
+      - name: Build and verify Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/cosmicscanner-ci"
+          python scripts/ci_build.py --work "$RUNNER_TEMP/cosmicscanner-ci" --eigen /usr/include/eigen3 2>&1 | tee "$RUNNER_TEMP/cosmicscanner-ci/build.log"
+      - name: Build and verify macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/cosmicscanner-ci"
+          python scripts/ci_build.py --work "$RUNNER_TEMP/cosmicscanner-ci" --eigen "$(brew --prefix eigen)/include/eigen3" --libomp-prefix "$(brew --prefix libomp)" 2>&1 | tee "$RUNNER_TEMP/cosmicscanner-ci/build.log"
+      - name: Upload packages, provenance and regression logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: CosmicScanner-ci-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/cosmicscanner-ci/artifacts/*.*
+            ${{ runner.temp }}/cosmicscanner-ci/build.log
+            ${{ runner.temp }}/cosmicscanner-ci/cli-checks/**
+            ${{ runner.temp }}/cosmicscanner-ci/review-checks/**
+            ${{ runner.temp }}/cosmicscanner-ci/cosmicscanner-native-demo-*/**
